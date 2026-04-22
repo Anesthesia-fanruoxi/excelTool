@@ -19,20 +19,19 @@ export function useExport() {
 
   /**
    * 分批拉取数据并导出为 xlsx
-   * @param search      搜索关键词（空=全部）
+   * @param conditions  搜索条件数组 [[col, kw], ...]
    * @param statusFilter 状态筛选（空=全部）
    * @param filename    文件名（不含扩展名）
    */
-  async function exportXlsx(search: string, statusFilter: string, filename: string) {
+  async function exportXlsx(conditions: [string, string][], statusFilter: string, filename: string) {
     isExporting.value = true;
     exportProgress.value = 0;
 
     try {
-      // 第一批，同时获取总数
       const first = await invoke<PageResult>('query_sales_page', {
         page: 1,
         pageSize: BATCH_SIZE,
-        search,
+        conditions,
         statusFilter,
       });
 
@@ -48,12 +47,11 @@ export function useExport() {
       first.rows.forEach((r) => allRows.push(computeRow(r)));
       exportProgress.value = Math.round((1 / totalPages) * 100);
 
-      // 分批拉取剩余页
       for (let page = 2; page <= totalPages; page++) {
         const result = await invoke<PageResult>('query_sales_page', {
           page,
           pageSize: BATCH_SIZE,
-          search,
+          conditions,
           statusFilter,
         });
         result.rows.forEach((r) => allRows.push(computeRow(r)));

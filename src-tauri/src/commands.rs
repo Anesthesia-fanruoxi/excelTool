@@ -159,11 +159,11 @@ pub fn query_sales_page(
     db: tauri::State<Arc<Database>>,
     page: usize,
     page_size: usize,
-    search: String,
+    conditions: Vec<(String, String)>,
     status_filter: String,
 ) -> Result<PageResult, String> {
-    let total = db.count(&search, &status_filter).map_err(|e| e.to_string())?;
-    let db_rows = db.query_page(page, page_size, &search, &status_filter).map_err(|e| e.to_string())?;
+    let total = db.count(&conditions, &status_filter).map_err(|e| e.to_string())?;
+    let db_rows = db.query_page(page, page_size, &conditions, &status_filter).map_err(|e| e.to_string())?;
 
     let rows: Vec<HashMap<String, String>> = db_rows
         .into_iter()
@@ -185,7 +185,7 @@ pub fn query_sales_page(
 /// 获取销售表统计
 #[tauri::command]
 pub fn get_table_stats(db: tauri::State<Arc<Database>>) -> Result<TableStats, String> {
-    let count = db.count("", "").map_err(|e| e.to_string())?;
+    let count = db.count(&[], "").map_err(|e| e.to_string())?;
     Ok(TableStats { name: "销售表".to_string(), count })
 }
 
@@ -288,6 +288,74 @@ fn calc_contract_status(statuses: &[String]) -> String {
         .max_by_key(|s| priority(s.as_str()))
         .cloned()
         .unwrap_or_default()
+}
+
+// ── 预览数据（vault_status 兼容接口）────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VaultEntry {
+    pub name: String,
+    pub headers: Vec<String>,
+    pub data: Vec<Vec<String>>,
+    pub imported_at: String,
+    pub source_file: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VaultStatus {
+    pub entries: Vec<VaultEntry>,
+}
+
+/// 返回销售表所有数据，供前端预览使用
+#[tauri::command]
+pub fn get_vault_status(db: tauri::State<Arc<Database>>) -> Result<VaultStatus, String> {
+    let count = db.count(&[], "").map_err(|e| e.to_string())?;
+    if count == 0 {
+        return Ok(VaultStatus { entries: vec![] });
+    }
+
+    // 分批读取全部数据
+    let batch = 1000usize;
+    let total_pages = ((count as usize) + batch - 1) / batch;
+    let mut all_rows: Vec<Vec<String>> = Vec::with_capacity(count as usize);
+
+    // 收集所有列（按 SALES_COLUMNS 顺序）
+    let headers: Vec<String> = vec![
+        "客户","销售日期","合同号","送货单号","项目名称","收货地址",
+        "序号","产品名称","规格","特征","数量","单位","单价","金额",
+        "下单人","安装位置","备注","所属年份","签收人","签收日期",
+        "与客户对账时间","状态列","供应商","初始报价","税率",
+        "成本单价含税","应付金额","对账数量","对账单价","对账日期",
+        "对账金额","对账备注","利润",
+    ].into_iter().map(String::from).collect();
+
+    for page in 1..=total_pages {
+        let db_rows = db.query_page(page, batch, &[], "").map_err(|e| e.to_string())?;
+        for r in db_rows {
+            let mut map: std::collections::HashMap<String, String> =
+                serde_json::from_str(&r.data).unwrap_or_default();
+            // 注入计算列
+            let (amount, profit) = calc_amount(&map);
+            map.insert("金额".to_string(), amount.to_string());
+            map.insert("利润".to_string(), profit.to_string());
+            map.insert("状态列".to_string(), calc_status(&map));
+
+            let row: Vec<String> = headers.iter()
+                .map(|h| map.get(h).cloned().unwrap_or_default())
+                .collect();
+            all_rows.push(row);
+        }
+    }
+
+    let entry = VaultEntry {
+        name: "销售表".to_string(),
+        headers,
+        data: all_rows,
+        imported_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        source_file: String::new(),
+    };
+
+    Ok(VaultStatus { entries: vec![entry] })
 }
 
 // ── 最近文件 ──────────────────────────────────────────────

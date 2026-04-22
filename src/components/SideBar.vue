@@ -16,8 +16,8 @@ const emit = defineEmits<{
 
 const menus: MenuItem[] = [
   { key: 'data', label: '数据管理', icon: '🗄️' },
-  { key: 'sales', label: '销售表', icon: '📋' },
-  { key: 'contract', label: '合同', icon: '📄' },
+  { key: 'sales', label: '销售明细', icon: '📋' },
+  { key: 'contract', label: '合同管理', icon: '📄' },
 ];
 </script>
 

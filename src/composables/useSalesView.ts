@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/tauri';
 import {
   SALES_COLUMNS,
   LIST_COLUMNS,
+  FILTER_COLUMNS,
   COMPUTED_COLUMNS,
   computeRow,
 } from '../constants/salesColumns';
@@ -15,6 +16,11 @@ interface PageResult {
   page_size: number;
 }
 
+export interface SearchCondition {
+  col: string;   // 空 = 全文
+  kw: string;
+}
+
 export function useSalesView() {
   const isLoading = ref(false);
   const isSaving  = ref(false);
@@ -25,9 +31,8 @@ export function useSalesView() {
   const curPage   = ref(1);
   const pageSize  = 50;
 
-  // 搜索
-  const searchText   = ref('');
-  const searchCol    = ref('');
+  // 多条件搜索
+  const conditions = ref<SearchCondition[]>([{ col: '', kw: '' }]);
 
   // 详情弹框
   const detailRow = ref<SalesRow | null>(null);
@@ -57,13 +62,17 @@ export function useSalesView() {
   async function loadPage() {
     isLoading.value = true;
     try {
+      // 过滤掉空关键词的条件
+      const activeConditions = conditions.value
+        .filter(c => c.kw.trim() !== '')
+        .map(c => [c.col, c.kw.trim()] as [string, string]);
+
       const result = await invoke<PageResult>('query_sales_page', {
         page: curPage.value,
         pageSize,
-        search: searchText.value,
+        conditions: activeConditions,
         statusFilter: '',
       });
-      // 注入计算列
       rows.value = result.rows.map((r) => computeRow(r));
       total.value = result.total;
     } catch (e) {
@@ -74,6 +83,27 @@ export function useSalesView() {
   }
 
   function onSearch() {
+    curPage.value = 1;
+    loadPage();
+  }
+
+  function prevPage() {
+    if (curPage.value > 1) { curPage.value--; loadPage(); }
+  }
+  function nextPage() {
+    if (curPage.value < totalPages.value) { curPage.value++; loadPage(); }
+  }
+
+  // 条件管理
+  function addCondition() {
+    conditions.value.push({ col: '', kw: '' });
+  }
+  function removeCondition(idx: number) {
+    conditions.value.splice(idx, 1);
+    if (conditions.value.length === 0) conditions.value.push({ col: '', kw: '' });
+  }
+  function resetConditions() {
+    conditions.value = [{ col: '', kw: '' }];
     curPage.value = 1;
     loadPage();
   }
@@ -175,14 +205,14 @@ export function useSalesView() {
 
   return {
     LIST_COLUMNS,
+    FILTER_COLUMNS,
     SALES_COLUMNS,
     COMPUTED_COLUMNS,
     isLoading,
     isSaving,
     rows,
     total,
-    searchText,
-    searchCol,
+    conditions,
     curPage,
     pageSize,
     totalPages,
@@ -193,6 +223,11 @@ export function useSalesView() {
     toastType,
     onSearch,
     loadPage,
+    prevPage,
+    nextPage,
+    addCondition,
+    removeCondition,
+    resetConditions,
     openDetail,
     closeDetail,
     openAdd,

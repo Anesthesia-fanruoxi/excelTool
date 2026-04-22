@@ -88,29 +88,47 @@ impl Database {
         Ok(())
     }
 
-    /// 分页查询
-    pub fn query_page(&self, page: usize, page_size: usize, search: &str, status_filter: &str) -> SqlResult<Vec<SalesRow>> {
+    /// 分页查询（支持多条件 AND）
+    /// conditions: Vec<(col, keyword)>，col 为空表示全文搜索
+    pub fn query_page(
+        &self,
+        page: usize,
+        page_size: usize,
+        conditions: &[(String, String)],
+        status_filter: &str,
+    ) -> SqlResult<Vec<SalesRow>> {
         let conn = self.conn.lock().unwrap();
         let offset = (page - 1) * page_size;
-        
+
         let mut sql = "SELECT id, data, contract_no, customer, sale_date, amount, profit, status, created_at FROM sales WHERE 1=1".to_string();
         let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![];
-        
-        if !search.is_empty() {
-            sql.push_str(" AND (contract_no LIKE ?1 OR customer LIKE ?1 OR data LIKE ?1)");
-            params_vec.push(Box::new(format!("%{}%", search)));
+
+        for (col, kw) in conditions {
+            if kw.is_empty() { continue; }
+            let idx = params_vec.len() + 1;
+            if col.is_empty() {
+                sql.push_str(&format!(
+                    " AND (contract_no LIKE ?{idx} OR customer LIKE ?{idx} OR data LIKE ?{idx})"
+                ));
+            } else {
+                sql.push_str(&format!(
+                    " AND json_extract(data, '$.{col}') LIKE ?{idx}"
+                ));
+            }
+            params_vec.push(Box::new(format!("%{}%", kw)));
         }
+
         if !status_filter.is_empty() {
             let idx = params_vec.len() + 1;
-            sql.push_str(&format!(" AND status = ?{}", idx));
+            sql.push_str(&format!(" AND status = ?{idx}"));
             params_vec.push(Box::new(status_filter.to_string()));
         }
-        
+
         sql.push_str(&format!(" ORDER BY id DESC LIMIT {} OFFSET {}", page_size, offset));
-        
+
         let mut stmt = conn.prepare(&sql)?;
         let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| b.as_ref()).collect();
-        
+
         let rows = stmt.query_map(params_refs.as_slice(), |row| {
             Ok(SalesRow {
                 id: row.get(0)?,
@@ -124,26 +142,41 @@ impl Database {
                 created_at: row.get(8)?,
             })
         })?;
-        
+
         rows.collect()
     }
 
-    /// 总数
-    pub fn count(&self, search: &str, status_filter: &str) -> SqlResult<i64> {
+    /// 总数（支持多条件 AND）
+    pub fn count(
+        &self,
+        conditions: &[(String, String)],
+        status_filter: &str,
+    ) -> SqlResult<i64> {
         let conn = self.conn.lock().unwrap();
         let mut sql = "SELECT COUNT(*) FROM sales WHERE 1=1".to_string();
         let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![];
-        
-        if !search.is_empty() {
-            sql.push_str(" AND (contract_no LIKE ?1 OR customer LIKE ?1 OR data LIKE ?1)");
-            params_vec.push(Box::new(format!("%{}%", search)));
+
+        for (col, kw) in conditions {
+            if kw.is_empty() { continue; }
+            let idx = params_vec.len() + 1;
+            if col.is_empty() {
+                sql.push_str(&format!(
+                    " AND (contract_no LIKE ?{idx} OR customer LIKE ?{idx} OR data LIKE ?{idx})"
+                ));
+            } else {
+                sql.push_str(&format!(
+                    " AND json_extract(data, '$.{col}') LIKE ?{idx}"
+                ));
+            }
+            params_vec.push(Box::new(format!("%{}%", kw)));
         }
+
         if !status_filter.is_empty() {
             let idx = params_vec.len() + 1;
-            sql.push_str(&format!(" AND status = ?{}", idx));
+            sql.push_str(&format!(" AND status = ?{idx}"));
             params_vec.push(Box::new(status_filter.to_string()));
         }
-        
+
         let mut stmt = conn.prepare(&sql)?;
         let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| b.as_ref()).collect();
         stmt.query_row(params_refs.as_slice(), |row| row.get(0))

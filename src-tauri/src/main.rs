@@ -29,6 +29,7 @@ fn main() {
             commands::delete_sales_row,
             commands::query_contracts,
             commands::query_contract_detail,
+            commands::get_vault_status,
             commands::get_recent_files,
             commands::add_recent_file,
             machine_id::get_machine_id,

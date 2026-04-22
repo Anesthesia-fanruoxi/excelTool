@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ref } from 'vue';
 import SideBar from './components/SideBar.vue';
 import DataManager from './views/DataManager.vue';
 import SalesView from './views/SalesView.vue';
 import ContractView from './views/ContractView.vue';
+import { useNavigationStore } from './stores/navigation';
+import { storeToRefs } from 'pinia';
 
-const activeMenu = ref('data');
+const nav = useNavigationStore();
+const { activeMenu } = storeToRefs(nav);
 </script>
 
 <template>
