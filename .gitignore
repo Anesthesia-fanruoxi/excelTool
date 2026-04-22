@@ -1,0 +1,42 @@
+# 依赖
+node_modules/
+
+# 前端构建产物
+dist/
+
+# Rust 编译产物
+src-tauri/target/
+
+# 本地数据库文件
+*.db
+*.db-shm
+*.db-wal
+
+# 本地加密数据
+*.enc
+
+# 环境变量
+.env
+.env.local
+.env.*.local
+
+# 编辑器
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 日志
+*.log
+npm-debug.log*
+
+# 打包产物
+src-tauri/target/release/bundle/
