@@ -3,20 +3,10 @@ import { useContractView } from '../composables/useContractView';
 import { useCopyCell } from '../composables/useCopyCell';
 
 const {
-  isLoading,
-  searchText,
-  statusFilter,
-  curPage,
-  pageSize,
-  totalPages,
-  pagedContracts,
-  filteredContracts,
-  expandedContract,
-  expandedRows,
-  toastMsg,
-  toastType,
-  onSearch,
-  toggleExpand,
+  isLoading, searchText, statusFilter, curPage, pageSize,
+  totalPages, pagedContracts, filteredContracts,
+  expandedContract, expandedRows, toastMsg, toastType,
+  onSearch, toggleExpand,
 } = useContractView();
 
 const { copiedKey, toastVisible, copyCell } = useCopyCell();
@@ -30,12 +20,8 @@ function fmt(val: number): string {
   <div class="contract-view">
     <!-- Toast -->
     <transition name="fade">
-      <div v-if="toastMsg" :class="['toast', toastType === 'error' ? 'toast-error' : 'toast-success']">
-        {{ toastMsg }}
-      </div>
+      <div v-if="toastMsg" :class="['toast', toastType === 'error' ? 'toast-error' : 'toast-success']">{{ toastMsg }}</div>
     </transition>
-
-    <!-- 复制提示 -->
     <transition name="slide-up">
       <div v-if="toastVisible" class="copy-toast">复制成功 ✓</div>
     </transition>
@@ -56,9 +42,7 @@ function fmt(val: number): string {
     </div>
 
     <!-- 统计栏 -->
-    <div class="stat-bar">
-      共 <b>{{ filteredContracts.length }}</b> 份合同
-    </div>
+    <div class="stat-bar">共 <b>{{ filteredContracts.length }}</b> 份合同</div>
 
     <!-- 表格 -->
     <div class="table-wrap">
@@ -67,7 +51,6 @@ function fmt(val: number): string {
         <div class="empty-icon">📄</div>
         <p>暂无合同数据，请先在「数据管理」中导入</p>
       </div>
-
       <table v-else class="data-table">
         <thead>
           <tr>
@@ -85,56 +68,31 @@ function fmt(val: number): string {
         </thead>
         <tbody>
           <template v-for="(contract, idx) in pagedContracts" :key="contract.contract_no">
-            <!-- 合同主行 -->
             <tr class="contract-row" @click="toggleExpand(contract.contract_no)">
               <td class="col-expand">
                 <span class="expand-icon">{{ expandedContract === contract.contract_no ? '▼' : '▶' }}</span>
               </td>
               <td class="col-seq">{{ (curPage - 1) * pageSize + idx + 1 }}</td>
-              <td
-                class="contract-no"
-                :class="{ 'cell-copied': copiedKey === `${idx}-合同号` }"
-                @dblclick.stop="copyCell(`${idx}-合同号`, contract.contract_no)"
-              >{{ contract.contract_no }}</td>
-              <td
-                :class="{ 'cell-copied': copiedKey === `${idx}-客户` }"
-                @dblclick.stop="copyCell(`${idx}-客户`, contract.customer)"
-              >{{ contract.customer }}</td>
+              <td class="contract-no" :class="{ 'cell-copied': copiedKey === `${idx}-合同号` }" @dblclick.stop="copyCell(`${idx}-合同号`, contract.contract_no)">{{ contract.contract_no }}</td>
+              <td :class="{ 'cell-copied': copiedKey === `${idx}-客户` }" @dblclick.stop="copyCell(`${idx}-客户`, contract.customer)">{{ contract.customer }}</td>
               <td>{{ contract.sale_date }}</td>
-              <td
-                :class="{ 'cell-copied': copiedKey === `${idx}-项目` }"
-                @dblclick.stop="copyCell(`${idx}-项目`, contract.project_name)"
-              >{{ contract.project_name }}</td>
-              <td class="num-col">
-                <span class="badge">{{ contract.row_count }}</span>
-              </td>
+              <td :class="{ 'cell-copied': copiedKey === `${idx}-项目` }" @dblclick.stop="copyCell(`${idx}-项目`, contract.project_name)">{{ contract.project_name }}</td>
+              <td class="num-col"><span class="badge">{{ contract.row_count }}</span></td>
               <td class="num-col amount">{{ fmt(contract.total_amount) }}</td>
-              <td class="num-col" :class="contract.total_profit >= 0 ? 'profit-pos' : 'profit-neg'">
-                {{ fmt(contract.total_profit) }}
-              </td>
+              <td class="num-col" :class="contract.total_profit >= 0 ? 'profit-pos' : 'profit-neg'">{{ fmt(contract.total_profit) }}</td>
               <td class="col-status">
-                <span :class="['status-tag', `status-${contract.reconcile_status}`]">
-                  {{ contract.reconcile_status }}
-                </span>
+                <!-- stylelint-disable-next-line selector-pseudo-class-no-unknown -->
+                <span :class="['status-tag', `status-${contract.reconcile_status}`]">{{ contract.reconcile_status }}</span>
               </td>
             </tr>
-
-            <!-- 展开明细行 -->
             <tr v-if="expandedContract === contract.contract_no" class="detail-row">
-              <td colspan="9" class="detail-cell">
+              <td colspan="10" class="detail-cell">
                 <table class="detail-table">
                   <thead>
                     <tr>
-                      <th>序号</th>
-                      <th>产品名称</th>
-                      <th>规格</th>
-                      <th>数量</th>
-                      <th>单位</th>
-                      <th>单价</th>
-                      <th>金额</th>
-                      <th>安装位置</th>
-                      <th>利润</th>
-                      <th>对账状态</th>
+                      <th>序号</th><th>产品名称</th><th>规格</th><th>数量</th>
+                      <th>单位</th><th>单价</th><th>金额</th><th>安装位置</th>
+                      <th>利润</th><th>对账状态</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -147,13 +105,9 @@ function fmt(val: number): string {
                       <td>{{ row['单价'] }}</td>
                       <td>{{ row['金额'] }}</td>
                       <td>{{ row['安装位置'] }}</td>
-                      <td :class="parseFloat(row['利润']) >= 0 ? 'profit-pos' : 'profit-neg'">
-                        {{ row['利润'] }}
-                      </td>
+                      <td :class="parseFloat(row['利润']) >= 0 ? 'profit-pos' : 'profit-neg'">{{ row['利润'] }}</td>
                       <td>
-                        <span :class="['status-tag', `status-${row['状态列']}`]">
-                          {{ row['状态列'] || '—' }}
-                        </span>
+                        <span :class="['status-tag', `status-${row['状态列']}`]">{{ row['状态列'] || '—' }}</span>
                       </td>
                     </tr>
                   </tbody>
@@ -175,131 +129,71 @@ function fmt(val: number): string {
 </template>
 
 <style scoped>
-.contract-view {
-  display: flex; flex-direction: column;
-  height: 100%; overflow: hidden;
-}
+.contract-view { display: flex; flex-direction: column; height: 100%; overflow: hidden; background: #f0f2f5; }
 
-.toast {
-  position: fixed; top: 20px; right: 20px;
-  padding: 10px 18px; border-radius: 6px; font-size: 13px;
-  z-index: 9999; box-shadow: 0 4px 16px rgba(0,0,0,0.4);
-}
-.toast-error   { background: #e74c3c; color: #fff; }
-.toast-success { background: #27ae60; color: #fff; }
+/* stylelint-disable selector-pseudo-class-no-unknown */
+.toast { position: fixed; top: 20px; right: 20px; padding: 10px 18px; border-radius: 6px; font-size: 13px; z-index: 9999; box-shadow: 0 4px 16px rgba(0,0,0,0.15); }
+.toast-error   { background: #ff4d4f; color: #fff; }
+.toast-success { background: #52c41a; color: #fff; }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
-
-.copy-toast {
-  position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
-  background: #27ae60; color: #fff; padding: 8px 24px;
-  border-radius: 20px; font-size: 13px; z-index: 9999;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3); pointer-events: none;
-}
+.copy-toast { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); background: #52c41a; color: #fff; padding: 6px 20px; border-radius: 20px; font-size: 13px; z-index: 9999; pointer-events: none; }
 .slide-up-enter-active, .slide-up-leave-active { transition: all 0.25s ease; }
 .slide-up-enter-from, .slide-up-leave-to { opacity: 0; transform: translateX(-50%) translateY(10px); }
+/* stylelint-enable */
 
-.top-bar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0 20px; height: 56px; border-bottom: 1px solid #0f3460; flex-shrink: 0;
-}
-.page-title { font-size: 17px; font-weight: 600; color: #fff; }
+.top-bar { display: flex; align-items: center; justify-content: space-between; padding: 0 16px; height: 52px; background: #fff; border-bottom: 1px solid #e8e8e8; flex-shrink: 0; }
+.page-title { font-size: 16px; font-weight: 600; color: #262626; }
 .top-actions { display: flex; align-items: center; gap: 8px; }
-.search-input {
-  padding: 6px 12px; background: #0f3460; border: 1px solid #1a4a7a;
-  border-radius: 4px; color: #fff; font-size: 13px; width: 280px;
-}
-.search-input:focus { outline: none; border-color: #4a9eff; }
-.sel {
-  padding: 6px 10px; background: #0f3460; border: 1px solid #1a4a7a;
-  border-radius: 4px; color: #ccc; font-size: 13px; cursor: pointer;
-}
-.sel:focus { outline: none; border-color: #4a9eff; }
+.sel { padding: 5px 8px; background: #fff; border: 1px solid #d9d9d9; border-radius: 4px; color: #333; font-size: 13px; cursor: pointer; }
+.sel:focus { outline: none; border-color: #1677ff; }
+.search-input { padding: 5px 10px; background: #fff; border: 1px solid #d9d9d9; border-radius: 4px; color: #333; font-size: 13px; width: 260px; }
+.search-input:focus { outline: none; border-color: #1677ff; }
 
-.stat-bar {
-  padding: 6px 20px; font-size: 12px; color: #666;
-  border-bottom: 1px solid #0f3460; flex-shrink: 0;
-}
-.stat-bar b { color: #4a9eff; }
+.stat-bar { padding: 4px 16px; font-size: 12px; color: #8c8c8c; background: #fafafa; border-bottom: 1px solid #f0f0f0; flex-shrink: 0; }
+.stat-bar b { color: #1677ff; }
 
-.table-wrap { flex: 1; overflow: auto; }
-
-.status-center {
-  display: flex; flex-direction: column; align-items: center;
-  justify-content: center; height: 100%; color: #555; gap: 12px; font-size: 14px;
-}
+.table-wrap { flex: 1; overflow: auto; background: #fff; }
+.status-center { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #bfbfbf; gap: 12px; font-size: 14px; }
 .empty-icon { font-size: 40px; }
 
-.data-table {
-  width: 100%; border-collapse: collapse; font-size: 13px;
-}
-.data-table th,
-.data-table td {
-  padding: 10px 12px; border: 1px solid #0f3460; text-align: left;
-}
-.data-table thead th {
-  background: #16213e; color: #4a9eff; font-weight: 600;
-  position: sticky; top: 0; z-index: 10; white-space: nowrap;
-}
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th, .data-table td { padding: 6px 10px; border-bottom: 1px solid #f0f0f0; text-align: left; white-space: nowrap; }
+.data-table thead th { background: #fafafa; color: #595959; font-weight: 600; position: sticky; top: 0; z-index: 10; border-bottom: 1px solid #e8e8e8; }
 
 .contract-row { cursor: pointer; }
-.contract-row td { background: #1a1a2e; color: #ccc; }
-.contract-row:hover td { background: #16213e; }
+.contract-row td { background: #fff; color: #333; }
+.contract-row:hover td { background: #e6f4ff; }
 
-.col-expand { width: 36px; text-align: center; }
-.expand-icon { font-size: 10px; color: #4a9eff; }
-.col-seq {
-  width: 50px; text-align: center;
-  background: #0f3460 !important; color: #555 !important;
-}
-.contract-no { color: #4a9eff !important; font-weight: 500; }
+.col-expand { width: 32px; text-align: center; }
+.expand-icon { font-size: 10px; color: #1677ff; }
+.col-seq { width: 46px; text-align: center; color: #bfbfbf !important; background: #fafafa !important; }
+.contract-no { color: #1677ff !important; font-weight: 500; }
 .num-col { text-align: right; font-variant-numeric: tabular-nums; }
-.amount { color: #fff !important; }
-.profit-pos { color: #27ae60 !important; }
-.profit-neg { color: #e74c3c !important; }
-.badge {
-  display: inline-block; padding: 1px 8px;
-  background: #0f3460; border-radius: 10px;
-  font-size: 12px; color: #888;
-}
-.cell-copied { color: #27ae60 !important; background: #0d2a1a !important; }
+.amount { color: #262626 !important; font-weight: 500; }
+.profit-pos { color: #52c41a !important; }
+.profit-neg { color: #ff4d4f !important; }
+.badge { display: inline-block; padding: 1px 8px; background: #f0f0f0; border-radius: 10px; font-size: 12px; color: #8c8c8c; }
+.cell-copied { color: #52c41a !important; background: #f6ffed !important; }
 
 .col-status { width: 100px; text-align: center; }
-.status-tag {
-  display: inline-block; padding: 2px 10px; border-radius: 10px;
-  font-size: 12px; font-weight: 500; white-space: nowrap;
-}
-.status-已对账  { background: #0d2a1a; color: #27ae60; border: 1px solid #27ae6044; }
-.status-待对账  { background: #1a2a0a; color: #f39c12; border: 1px solid #f39c1244; }
-.status-等回签  { background: #0a1a2a; color: #4a9eff; border: 1px solid #4a9eff44; }
-.status-回签不完整 { background: #2a1010; color: #e74c3c; border: 1px solid #e74c3c44; }
+.status-tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.status-已对账    { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
+.status-待对账    { background: #fffbe6; color: #faad14; border: 1px solid #ffe58f; }
+.status-等回签    { background: #e6f4ff; color: #1677ff; border: 1px solid #91caff; }
+.status-回签不完整 { background: #fff2f0; color: #ff4d4f; border: 1px solid #ffccc7; }
 
 /* 展开明细 */
-.detail-row td { padding: 0; background: #111827 !important; }
+.detail-row td { padding: 0; background: #fafafa !important; }
 .detail-cell { padding: 0 !important; }
-.detail-table {
-  width: 100%; border-collapse: collapse; font-size: 12px;
-}
-.detail-table th,
-.detail-table td {
-  padding: 7px 12px; border: 1px solid #0f3460;
-  text-align: left; white-space: nowrap;
-}
-.detail-table thead th {
-  background: #0f1f35; color: #888; font-weight: 500;
-  position: sticky; top: 0;
-}
-.detail-table tbody td { color: #aaa; background: #111827; }
+.detail-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.detail-table th, .detail-table td { padding: 5px 10px; border-bottom: 1px solid #f0f0f0; text-align: left; white-space: nowrap; }
+.detail-table thead th { background: #f5f5f5; color: #8c8c8c; font-weight: 500; }
+.detail-table tbody td { color: #595959; background: #fafafa; }
 
-.pagination {
-  display: flex; align-items: center; justify-content: center;
-  gap: 14px; padding: 10px; border-top: 1px solid #0f3460; flex-shrink: 0;
-}
-.pagination button {
-  padding: 5px 14px; background: #0f3460; border: none;
-  border-radius: 4px; color: #ccc; font-size: 13px; cursor: pointer; transition: all 0.2s;
-}
+.pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 8px; background: #fff; border-top: 1px solid #f0f0f0; flex-shrink: 0; }
+.pagination button { padding: 4px 12px; background: #fff; border: 1px solid #d9d9d9; border-radius: 4px; color: #595959; font-size: 13px; cursor: pointer; transition: all 0.2s; }
 .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
-.pagination button:hover:not(:disabled) { background: #4a9eff; color: #fff; }
-.pagination span { color: #ccc; font-size: 13px; min-width: 60px; text-align: center; }
+.pagination button:hover:not(:disabled) { border-color: #1677ff; color: #1677ff; }
+.pagination span { color: #595959; font-size: 13px; min-width: 60px; text-align: center; }
 </style>

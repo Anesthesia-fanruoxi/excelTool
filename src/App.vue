@@ -27,9 +27,9 @@ const activeMenu = ref('data');
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #1a1a2e;
-  color: #eee;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Microsoft YaHei', sans-serif;
+  background: #f0f2f5;
+  color: #333;
   height: 100vh;
   overflow: hidden;
 }
@@ -45,6 +45,6 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  background: #1a1a2e;
+  background: #f0f2f5;
 }
 </style>
