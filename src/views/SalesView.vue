@@ -15,7 +15,7 @@ const {
   detailRow, dialog, deleteConfirm, toastMsg, toastType,
   onSearch, addCondition, removeCondition, resetConditions,
   prevPage, nextPage,
-  openDetail, closeDetail, openAdd, openEdit,
+  openDetail, closeDetail, openEdit,
   saveDialog, confirmDelete, doDelete,
 } = useSalesView();
 

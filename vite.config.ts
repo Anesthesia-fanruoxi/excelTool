@@ -12,6 +12,17 @@ export default defineConfig(async () => ({
     },
   },
   clearScreen: false,
+  build: {
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          xlsx: ["xlsx"],
+          tauri: ["@tauri-apps/api"],
+        },
+      },
+    },
+  },
   server: {
     port: 1420,
     strictPort: true,

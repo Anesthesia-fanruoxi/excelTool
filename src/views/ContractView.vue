@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { invoke } from '@tauri-apps/api/tauri';
+import * as XLSX from 'xlsx';
 import { useContractView } from '../composables/useContractView';
 import { useCopyCell } from '../composables/useCopyCell';
 import ContractAddModal from '../components/contract/ContractAddModal.vue';
@@ -16,7 +18,7 @@ const {
   onSearch, onReset, loadData, toggleExpand,
 } = useContractView();
 
-const { copiedKey: _copiedKey, toastVisible: _tv, copyCell: _cc } = useCopyCell();
+const { copiedKey: _copiedKey, toastVisible, copyCell: _cc } = useCopyCell();
 
 const showAddModal = ref(false);
 const editingContract = ref<ContractSummary | null>(null);
@@ -37,21 +39,6 @@ function onSaved() { loadData(); }
 
 function fmt(val: number): string {
   return val.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-// ── 删除明细行 ────────────────────────────────────────────
-async function deleteDetailRow(e: MouseEvent, row: Record<string, string>, contractNo: string) {
-  e.stopPropagation();
-  if (!confirm(`确认删除「${row['产品名称'] || '该行'}」？`)) return;
-  try {
-    const { invoke } = await import('@tauri-apps/api/tauri');
-    await invoke('delete_sales_row', { id: Number(row['__id']) });
-    expandedRows.value[contractNo] = (expandedRows.value[contractNo] ?? [])
-      .filter(r => r['__id'] !== row['__id']);
-    loadData();
-  } catch (e) {
-    alert(`删除失败: ${e}`);
-  }
 }
 
 // ── 对账状态浮层 ──────────────────────────────────────────
@@ -127,7 +114,6 @@ async function savePopup() {
   if (!popup.value) return;
   isSavingPopup.value = true;
   try {
-    const { invoke } = await import('@tauri-apps/api/tauri');
     const id = Number(popup.value.form['__id']);
     const rowData = { ...popup.value.row, ...popup.value.form };
     delete rowData['__id'];
@@ -152,9 +138,7 @@ async function savePopup() {
 async function exportContract(e: MouseEvent, contractNo: string) {
   e.stopPropagation();
   try {
-    const { invoke } = await import('@tauri-apps/api/tauri');
     const rows: Record<string, string>[] = await invoke('query_contract_detail', { contractNo });
-    const XLSX = await import('xlsx');
     const headers = [...SALES_COLUMNS];
     const data = [
       headers,
