@@ -32,6 +32,11 @@ fn main() {
             commands::get_vault_status,
             commands::get_recent_files,
             commands::add_recent_file,
+            commands::import_quote,
+            commands::get_quote_stats,
+            commands::clear_quote_table,
+            commands::query_quote_page,
+            commands::get_quote_vault_status,
             machine_id::get_machine_id,
         ])
         .run(tauri::generate_context!())

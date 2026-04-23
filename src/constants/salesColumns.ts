@@ -161,3 +161,110 @@ export const DETAIL_COLUMNS = new Set([
 ]);
 
 export type SalesRow = Record<string, string>;
+
+// ── 报价表 ────────────────────────────────────────────────
+
+/** 报价表标准列（与 Excel 模板表头完全一致） */
+export const QUOTE_COLUMNS = [
+  '报价序号',
+  '区域',
+  '日期',
+  '客户的合同号',
+  '序号',
+  '货物名称',
+  '规格型号',
+  '单位',
+  '数量',
+  '备注',
+  '供应商',
+  '列1',
+  '税率',
+  '成本单价（含税）',
+  '金额',
+  '销售单价(含税)',
+  '金额2',
+  '利润',
+  '(成本➗销售价)',
+  '最后成交单价',
+  '金额3',
+  '单价差异',
+] as const;
+
+/** 报价表计算列（由其他字段自动计算，不从 Excel 导入） */
+export const QUOTE_COMPUTED_COLUMNS = new Set([
+  '成本单价（含税）',
+  '金额',
+  '金额2',
+  '利润',
+  '(成本➗销售价)',
+  '金额3',
+  '单价差异',
+]);
+
+/**
+ * 计算报价表一行的派生字段
+ * 成本单价（含税）= 税率>12% ? 列1 : 列1/0.87
+ * 金额            = 成本单价（含税）× 数量
+ * 金额2           = 销售单价(含税) × 数量
+ * 利润            = 金额2 - 金额
+ * (成本➗销售价)  = 金额 / 金额2
+ * 金额3           = 最后成交单价 × 数量
+ * 单价差异        = 销售单价(含税) - 最后成交单价（>0 才显示）
+ */
+export function computeQuoteRow(row: Record<string, string>): Record<string, string> {
+  const result = { ...row };
+
+  function toNum(val: string | undefined): number {
+    if (!val?.trim()) return NaN;
+    return parseFloat(val.replace(/,/g, '').trim());
+  }
+  function fmt(n: number): string {
+    return isNaN(n) ? '' : String(Math.round(n * 100) / 100);
+  }
+
+  const col1 = toNum(result['列1']);
+  const taxRateRaw = result['税率']?.replace(/%/g, '').trim() ?? '';
+  const taxRate = parseFloat(taxRateRaw);
+  const qty = toNum(result['数量']);
+  const salePrice = toNum(result['销售单价(含税)']);
+  const finalPrice = toNum(result['最后成交单价']);
+
+  // 成本单价（含税）
+  let costPrice = NaN;
+  if (!isNaN(col1)) {
+    const rate = isNaN(taxRate) ? 0 : taxRate;
+    costPrice = rate > 12 ? col1 : col1 / 0.87;
+    result['成本单价（含税）'] = fmt(costPrice);
+  } else {
+    result['成本单价（含税）'] = '';
+  }
+
+  // 金额 = 成本单价（含税）× 数量
+  const amount = isNaN(costPrice) || isNaN(qty) ? NaN : costPrice * qty;
+  result['金额'] = fmt(amount);
+
+  // 金额2 = 销售单价(含税) × 数量
+  const amount2 = isNaN(salePrice) || isNaN(qty) ? NaN : salePrice * qty;
+  result['金额2'] = fmt(amount2);
+
+  // 利润 = 金额2 - 金额
+  result['利润'] = isNaN(amount) || isNaN(amount2) ? '' : fmt(amount2 - amount);
+
+  // (成本➗销售价) = 金额 / 金额2
+  result['(成本➗销售价)'] = isNaN(amount) || isNaN(amount2) || amount2 === 0 ? '' : fmt(amount / amount2);
+
+  // 金额3 = 最后成交单价 × 数量
+  result['金额3'] = isNaN(finalPrice) || isNaN(qty) ? '' : fmt(finalPrice * qty);
+
+  // 单价差异 = 销售单价(含税) - 最后成交单价，>0 才显示
+  if (!isNaN(salePrice) && !isNaN(finalPrice)) {
+    const diff = salePrice - finalPrice;
+    result['单价差异'] = diff > 0 ? fmt(diff) : '';
+  } else {
+    result['单价差异'] = '';
+  }
+
+  return result;
+}
+
+export type QuoteRow = Record<string, string>;

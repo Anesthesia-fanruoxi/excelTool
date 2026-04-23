@@ -3,6 +3,7 @@ import SideBar from './components/SideBar.vue';
 import DataManager from './views/DataManager.vue';
 import SalesView from './views/SalesView.vue';
 import ContractView from './views/ContractView.vue';
+import QuoteView from './views/QuoteView.vue';
 import { useNavigationStore } from './stores/navigation';
 import { storeToRefs } from 'pinia';
 
@@ -17,6 +18,7 @@ const { activeMenu } = storeToRefs(nav);
       <DataManager v-if="activeMenu === 'data'" />
       <SalesView v-else-if="activeMenu === 'sales'" />
       <ContractView v-else-if="activeMenu === 'contract'" />
+      <QuoteView v-else-if="activeMenu === 'quote'" />
     </main>
   </div>
 </template>

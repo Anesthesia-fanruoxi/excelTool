@@ -385,3 +385,151 @@ pub fn add_recent_file(file_path: String) -> Result<(), String> {
     Ok(())
 }
 
+// ── 报价表 ────────────────────────────────────────────────
+
+/// 报价表计算列（后端镜像前端逻辑）
+fn calc_quote_computed(row: &mut HashMap<String, String>) {
+    fn to_f(v: &str) -> f64 {
+        v.replace(',', "").replace('%', "").trim().parse::<f64>().unwrap_or(f64::NAN)
+    }
+    fn fmt(n: f64) -> String {
+        if n.is_nan() { String::new() } else { format!("{}", (n * 100.0).round() / 100.0) }
+    }
+
+    let col1      = to_f(row.get("列1").map(|s| s.as_str()).unwrap_or(""));
+    let tax_rate  = to_f(row.get("税率").map(|s| s.as_str()).unwrap_or(""));
+    let qty       = to_f(row.get("数量").map(|s| s.as_str()).unwrap_or(""));
+    let sale_p    = to_f(row.get("销售单价(含税)").map(|s| s.as_str()).unwrap_or(""));
+    let final_p   = to_f(row.get("最后成交单价").map(|s| s.as_str()).unwrap_or(""));
+
+    // 成本单价（含税）
+    let cost_p = if col1.is_nan() { f64::NAN } else {
+        let rate = if tax_rate.is_nan() { 0.0 } else { tax_rate };
+        if rate > 12.0 { col1 } else { col1 / 0.87 }
+    };
+    row.insert("成本单价（含税）".to_string(), fmt(cost_p));
+
+    let amount  = if cost_p.is_nan() || qty.is_nan() { f64::NAN } else { cost_p * qty };
+    let amount2 = if sale_p.is_nan() || qty.is_nan()  { f64::NAN } else { sale_p * qty };
+
+    row.insert("金额".to_string(),  fmt(amount));
+    row.insert("金额2".to_string(), fmt(amount2));
+    row.insert("利润".to_string(),  if amount.is_nan() || amount2.is_nan() { String::new() } else { fmt(amount2 - amount) });
+    row.insert("(成本➗销售价)".to_string(),
+        if amount.is_nan() || amount2.is_nan() || amount2 == 0.0 { String::new() } else { fmt(amount / amount2) });
+    row.insert("金额3".to_string(),
+        if final_p.is_nan() || qty.is_nan() { String::new() } else { fmt(final_p * qty) });
+
+    let diff = if sale_p.is_nan() || final_p.is_nan() { f64::NAN } else { sale_p - final_p };
+    row.insert("单价差异".to_string(),
+        if diff.is_nan() || diff <= 0.0 { String::new() } else { fmt(diff) });
+}
+
+/// 导入报价表
+#[tauri::command]
+pub fn import_quote(
+    db: tauri::State<Arc<Database>>,
+    headers: Vec<String>,
+    data: Vec<Vec<String>>,
+) -> Result<usize, String> {
+    db.clear_quote().map_err(|e| e.to_string())?;
+
+    let rows: Vec<(String, String, String, String)> = data
+        .into_iter()
+        .map(|row| {
+            let mut map: HashMap<String, String> = HashMap::new();
+            headers.iter().enumerate().for_each(|(i, h)| {
+                map.insert(h.clone(), row.get(i).cloned().unwrap_or_default());
+            });
+            calc_quote_computed(&mut map);
+
+            let quote_no    = map.get("报价序号").cloned().unwrap_or_default();
+            let region      = map.get("区域").cloned().unwrap_or_default();
+            let contract_no = map.get("客户的合同号").cloned().unwrap_or_default();
+            let json = serde_json::to_string(&map).unwrap_or_default();
+            (json, quote_no, region, contract_no)
+        })
+        .collect();
+
+    let count = rows.len();
+    db.batch_insert_quote(rows).map_err(|e| e.to_string())?;
+    Ok(count)
+}
+
+/// 获取报价表统计
+#[tauri::command]
+pub fn get_quote_stats(db: tauri::State<Arc<Database>>) -> Result<TableStats, String> {
+    let count = db.quote_count().map_err(|e| e.to_string())?;
+    Ok(TableStats { name: "报价表".to_string(), count })
+}
+
+/// 清空报价表
+#[tauri::command]
+pub fn clear_quote_table(db: tauri::State<Arc<Database>>) -> Result<(), String> {
+    db.clear_quote().map_err(|e| e.to_string())
+}
+
+/// 报价表分页查询（支持多条件过滤）
+#[tauri::command]
+pub fn query_quote_page(
+    db: tauri::State<Arc<Database>>,
+    page: usize,
+    page_size: usize,
+    conditions: Vec<(String, String)>,
+) -> Result<PageResult, String> {
+    let total = db.count_quote_filtered(&conditions).map_err(|e| e.to_string())?;
+    let db_rows = db.query_quote_filtered(page, page_size, &conditions).map_err(|e| e.to_string())?;
+
+    let rows: Vec<HashMap<String, String>> = db_rows
+        .into_iter()
+        .map(|r| {
+            let mut map: HashMap<String, String> = serde_json::from_str(&r.data).unwrap_or_default();
+            calc_quote_computed(&mut map);
+            map.insert("__id".to_string(), r.id.to_string());
+            map
+        })
+        .collect();
+
+    Ok(PageResult { rows, total, page, page_size })
+}
+
+/// 报价表预览数据
+#[tauri::command]
+pub fn get_quote_vault_status(db: tauri::State<Arc<Database>>) -> Result<VaultStatus, String> {
+    let count = db.quote_count().map_err(|e| e.to_string())?;
+    if count == 0 {
+        return Ok(VaultStatus { entries: vec![] });
+    }
+
+    let headers: Vec<String> = vec![
+        "报价序号","区域","日期","客户的合同号","序号","货物名称","规格型号",
+        "单位","数量","备注","供应商","列1","税率","成本单价（含税）","金额",
+        "销售单价(含税)","金额2","利润","(成本➗销售价)","最后成交单价","金额3","单价差异",
+    ].into_iter().map(String::from).collect();
+
+    let batch = 1000usize;
+    let total_pages = ((count as usize) + batch - 1) / batch;
+    let mut all_rows: Vec<Vec<String>> = Vec::with_capacity(count as usize);
+
+    for page in 1..=total_pages {
+        let db_rows = db.query_quote_page(page, batch).map_err(|e| e.to_string())?;
+        for r in db_rows {
+            let mut map: HashMap<String, String> = serde_json::from_str(&r.data).unwrap_or_default();
+            calc_quote_computed(&mut map);
+            let row: Vec<String> = headers.iter()
+                .map(|h| map.get(h).cloned().unwrap_or_default())
+                .collect();
+            all_rows.push(row);
+        }
+    }
+
+    let entry = VaultEntry {
+        name: "报价表".to_string(),
+        headers,
+        data: all_rows,
+        imported_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        source_file: String::new(),
+    };
+    Ok(VaultStatus { entries: vec![entry] })
+}
+

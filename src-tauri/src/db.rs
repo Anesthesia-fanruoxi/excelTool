@@ -56,6 +56,27 @@ impl Database {
             [],
         )?;
 
+        // 报价表
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS quote (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                data TEXT NOT NULL,
+                quote_no TEXT,
+                region TEXT,
+                contract_no TEXT,
+                created_at TEXT NOT NULL
+            )",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_quote_no ON quote(quote_no)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_quote_contract ON quote(contract_no)",
+            [],
+        )?;
+
         info!("Database initialized at {:?}", db_path);
         Ok(Self { conn: Mutex::new(conn) })
     }
@@ -265,6 +286,119 @@ impl Database {
         conn.execute("DELETE FROM sales WHERE id = ?1", [id])?;
         Ok(())
     }
+
+    // ── 报价表 ────────────────────────────────────────────
+
+    pub fn clear_quote(&self) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM quote", [])?;
+        conn.execute("VACUUM", [])?;
+        Ok(())
+    }
+
+    pub fn quote_count(&self) -> SqlResult<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row("SELECT COUNT(*) FROM quote", [], |row| row.get(0))
+    }
+
+    pub fn batch_insert_quote(&self, rows: Vec<(String, String, String, String)>) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction()?;
+        let count = rows.len();
+        for (data, quote_no, region, contract_no) in rows {
+            tx.execute(
+                "INSERT INTO quote (data, quote_no, region, contract_no, created_at)
+                 VALUES (?1, ?2, ?3, ?4, datetime('now'))",
+                params![data, quote_no, region, contract_no],
+            )?;
+        }
+        tx.commit()?;
+        info!("batch_insert_quote committed {} rows", count);
+        Ok(())
+    }
+
+    pub fn query_quote_page(&self, page: usize, page_size: usize) -> SqlResult<Vec<QuoteRow>> {
+        let conn = self.conn.lock().unwrap();
+        let offset = (page - 1) * page_size;
+        let mut stmt = conn.prepare(
+            "SELECT id, data FROM quote ORDER BY id DESC LIMIT ?1 OFFSET ?2"
+        )?;
+        let rows = stmt.query_map(params![page_size as i64, offset as i64], |row| {
+            Ok(QuoteRow {
+                id: row.get(0)?,
+                data: row.get(1)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn query_quote_filtered(
+        &self,
+        page: usize,
+        page_size: usize,
+        conditions: &[(String, String)],
+    ) -> SqlResult<Vec<QuoteRow>> {
+        let conn = self.conn.lock().unwrap();
+        let offset = (page - 1) * page_size;
+
+        let mut sql = "SELECT id, data FROM quote WHERE 1=1".to_string();
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![];
+
+        for (col, kw) in conditions {
+            if kw.is_empty() { continue; }
+            let idx = params_vec.len() + 1;
+            if col.is_empty() {
+                sql.push_str(&format!(
+                    " AND (quote_no LIKE ?{idx} OR region LIKE ?{idx} OR contract_no LIKE ?{idx} OR data LIKE ?{idx})"
+                ));
+            } else {
+                sql.push_str(&format!(
+                    " AND json_extract(data, '$.{col}') LIKE ?{idx}"
+                ));
+            }
+            params_vec.push(Box::new(format!("%{}%", kw)));
+        }
+
+        sql.push_str(&format!(" ORDER BY id DESC LIMIT {} OFFSET {}", page_size, offset));
+
+        let mut stmt = conn.prepare(&sql)?;
+        let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| b.as_ref()).collect();
+        let rows = stmt.query_map(params_refs.as_slice(), |row| {
+            Ok(QuoteRow { id: row.get(0)?, data: row.get(1)? })
+        })?;
+        rows.collect()
+    }
+
+    pub fn count_quote_filtered(&self, conditions: &[(String, String)]) -> SqlResult<i64> {
+        let conn = self.conn.lock().unwrap();
+        let mut sql = "SELECT COUNT(*) FROM quote WHERE 1=1".to_string();
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![];
+
+        for (col, kw) in conditions {
+            if kw.is_empty() { continue; }
+            let idx = params_vec.len() + 1;
+            if col.is_empty() {
+                sql.push_str(&format!(
+                    " AND (quote_no LIKE ?{idx} OR region LIKE ?{idx} OR contract_no LIKE ?{idx} OR data LIKE ?{idx})"
+                ));
+            } else {
+                sql.push_str(&format!(
+                    " AND json_extract(data, '$.{col}') LIKE ?{idx}"
+                ));
+            }
+            params_vec.push(Box::new(format!("%{}%", kw)));
+        }
+
+        let mut stmt = conn.prepare(&sql)?;
+        let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| b.as_ref()).collect();
+        stmt.query_row(params_refs.as_slice(), |row| row.get(0))
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QuoteRow {
+    pub id: i64,
+    pub data: String,
 }
 
 fn get_db_path() -> PathBuf {

@@ -65,13 +65,13 @@ const {
           <div class="card-face card-back">
             <div class="back-title">{{ table.label }}</div>
             <div class="back-actions">
-              <button class="action-btn btn-preview" @click.stop="handlePreview">
+              <button class="action-btn btn-preview" @click.stop="handlePreview(table.key)">
                 <span class="action-icon">👁</span>预览数据
               </button>
-              <button class="action-btn btn-danger" :disabled="isImporting" @click.stop="handleImport">
+              <button class="action-btn btn-danger" :disabled="isImporting" @click.stop="handleImport(table.key)">
                 <span class="action-icon">📥</span>{{ isImporting ? '导入中...' : '导入数据' }}
               </button>
-              <button class="action-btn btn-danger" @click.stop="handleClear">
+              <button class="action-btn btn-danger" @click.stop="handleClear(table.key)">
                 <span class="action-icon">🗑</span>清空数据
               </button>
             </div>
