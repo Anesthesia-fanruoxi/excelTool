@@ -19,6 +19,7 @@ const { activeMenu } = storeToRefs(nav);
       <SalesView v-else-if="activeMenu === 'sales'" />
       <ContractView v-else-if="activeMenu === 'contract'" />
       <QuoteView v-else-if="activeMenu === 'quote'" />
+      <div v-else-if="activeMenu === 'sign'" class="coming-soon">签收对账功能开发中...</div>
     </main>
   </div>
 </template>
@@ -50,5 +51,13 @@ body {
   display: flex;
   flex-direction: column;
   background: #f0f2f5;
+}
+.coming-soon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 15px;
+  color: #bfbfbf;
 }
 </style>
