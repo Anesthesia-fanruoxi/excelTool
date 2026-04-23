@@ -146,6 +146,10 @@ export function useSalesView() {
     );
   }
 
+  function stopWatchForm() {
+    if (stopWatch) { stopWatch(); stopWatch = null; }
+  }
+
   // ── 保存 ──────────────────────────────────────────────
   async function saveDialog() {
     isSaving.value = true;
@@ -163,7 +167,7 @@ export function useSalesView() {
         rowData,
       });
 
-      if (stopWatch) { stopWatch(); stopWatch = null; }
+      stopWatchForm();
       dialog.value.show = false;
       await loadPage();
       showToast(isAdd ? '新增成功' : '修改成功', 'success');
@@ -172,6 +176,12 @@ export function useSalesView() {
     } finally {
       isSaving.value = false;
     }
+  }
+
+  // 关闭弹框时也要清理 watch
+  function closeDialog() {
+    stopWatchForm();
+    dialog.value.show = false;
   }
 
   // ── 删除 ──────────────────────────────────────────────
@@ -206,8 +216,6 @@ export function useSalesView() {
   return {
     LIST_COLUMNS,
     FILTER_COLUMNS,
-    SALES_COLUMNS,
-    COMPUTED_COLUMNS,
     isLoading,
     isSaving,
     rows,
@@ -232,6 +240,7 @@ export function useSalesView() {
     closeDetail,
     openAdd,
     openEdit,
+    closeDialog,
     saveDialog,
     confirmDelete,
     doDelete,

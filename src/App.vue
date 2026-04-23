@@ -12,7 +12,7 @@ const { activeMenu } = storeToRefs(nav);
 
 <template>
   <div class="app-container">
-    <SideBar :active-menu="activeMenu" @navigate="activeMenu = $event" />
+    <SideBar :active-menu="activeMenu" @navigate="nav.setMenu($event)" />
     <main class="main-content">
       <DataManager v-if="activeMenu === 'data'" />
       <SalesView v-else-if="activeMenu === 'sales'" />

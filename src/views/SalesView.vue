@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useSalesView } from '../composables/useSalesView';
 import { useCopyCell } from '../composables/useCopyCell';
 import { useExport } from '../composables/useExport';
@@ -15,22 +16,22 @@ const {
   detailRow, dialog, deleteConfirm, toastMsg, toastType,
   onSearch, addCondition, removeCondition, resetConditions,
   prevPage, nextPage,
-  openDetail, closeDetail, openEdit,
+  openDetail, closeDetail, openEdit, closeDialog,
   saveDialog, confirmDelete, doDelete,
 } = useSalesView();
 
 const { copiedKey, toastVisible, copyCell } = useCopyCell();
 const { isExporting, exportProgress, exportXlsx } = useExport();
 
-function getActiveConditions(): [string, string][] {
-  return conditions.value
+const activeConditions = computed(() =>
+  conditions.value
     .filter(c => c.kw.trim() !== '')
-    .map(c => [c.col, c.kw.trim()] as [string, string]);
-}
+    .map(c => [c.col, c.kw.trim()] as [string, string])
+);
+
 function exportAll() { exportXlsx([], '', '销售表_全部'); }
 function exportFiltered() {
-  const conds = getActiveConditions();
-  exportXlsx(conds, '', conds.length ? '销售表_筛选' : '销售表_全部');
+  exportXlsx(activeConditions.value, '', activeConditions.value.length ? '销售表_筛选' : '销售表_全部');
 }
 </script>
 
@@ -54,7 +55,7 @@ function exportFiltered() {
           <button class="btn-export" :disabled="isExporting || total === 0" @click="exportAll">
             {{ isExporting ? `导出中 ${exportProgress}%` : '导出全部' }}
           </button>
-          <button v-if="getActiveConditions().length" class="btn-export btn-export-filter" :disabled="isExporting" @click="exportFiltered">
+          <button v-if="activeConditions.length" class="btn-export btn-export-filter" :disabled="isExporting" @click="exportFiltered">
             导出筛选 ({{ total }})
           </button>
         </div>
@@ -135,7 +136,7 @@ function exportFiltered() {
     </div>
 
     <SalesDetailModal v-if="detailRow" :row="detailRow" @close="closeDetail" @edit="openEdit" @delete="confirmDelete" />
-    <SalesEditModal v-if="dialog.show" :mode="dialog.mode" :form="dialog.form" :is-saving="isSaving" @close="dialog.show = false" @save="saveDialog" />
+    <SalesEditModal v-if="dialog.show" :mode="dialog.mode" :form="dialog.form" :is-saving="isSaving" @close="closeDialog" @save="saveDialog" />
     <SalesDeleteConfirm v-if="deleteConfirm.show" @cancel="deleteConfirm.show = false" @confirm="doDelete" />
   </div>
 </template>

@@ -1,58 +1,40 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
+import {
+  useContractForm, DETAIL_COLS, isValidDate, recalcRow,
+  type DetailRow,
+} from '@/composables/useContractForm';
 
 const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'saved'): void;
 }>();
 
-// ── 基本信息 ──────────────────────────────────────────────
-const basicInfo = ref({
-  项目名称: '',
-  客户: '',
-  供应商: '',
-  销售日期: '',
-  合同号: '',
-});
+const {
+  basicInfo, detailRows, isSaving, toastMsg, canSave, addRow, removeRow, saveRows,
+} = useContractForm({ 项目名称: '', 客户: '', 供应商: '', 销售日期: '', 合同号: '' });
 
-// ── 产品明细列定义 ─────────────────────────────────────────
-// Excel 粘贴列顺序：序号|产品名称|规格|特征|数量|单位|单价|金额(跳过)|下单人|安装位置|备注
+// ── 粘贴解析 ──────────────────────────────────────────────
 const PASTE_COLS = ['序号', '产品名称', '规格', '特征', '数量', '单位', '单价', '_金额', '下单人', '安装位置', '备注'];
-const DETAIL_COLS = ['序号', '产品名称', '规格', '特征', '数量', '单位', '单价', '金额', '下单人', '安装位置', '备注', '初始报价', '税率', '成本单价含税'];
-
-type DetailRow = Record<string, string>;
-
 const pasteText = ref('');
-const detailRows = ref<DetailRow[]>([]);
 const parseError = ref('');
 
-// ── 解析粘贴文本 ──────────────────────────────────────────
-/**
- * 解析 Excel 复制的 TSV 格式
- * 处理：单元格内换行（被双引号包裹）、\r\n 行尾、重复引号转义
- */
 function parseTSV(raw: string): string[][] {
   const result: string[][] = [];
   let row: string[] = [];
   let cell = '';
   let inQuote = false;
   let i = 0;
-
-  // 统一换行符
   const text = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-
   while (i < text.length) {
     const ch = text[i];
-
     if (inQuote) {
       if (ch === '"') {
-        // 连续两个引号 = 转义引号
         if (text[i + 1] === '"') { cell += '"'; i += 2; continue; }
         inQuote = false; i++; continue;
       }
       cell += ch; i++; continue;
     }
-
     if (ch === '"') { inQuote = true; i++; continue; }
     if (ch === '\t') { row.push(cell.trim()); cell = ''; i++; continue; }
     if (ch === '\n') {
@@ -62,36 +44,27 @@ function parseTSV(raw: string): string[][] {
     }
     cell += ch; i++;
   }
-  // 最后一行
   row.push(cell.trim());
   if (row.some(c => c !== '')) result.push(row);
-
   return result;
+}
+
+function buildDetailRow(cells: string[]): DetailRow {
+  const row: DetailRow = {};
+  PASTE_COLS.forEach((col, i) => {
+    if (col === '_金额') return;
+    row[col] = (cells[i] ?? '').trim();
+  });
+  recalcRow(row);
+  return row;
 }
 
 function parsePaste() {
   parseError.value = '';
   const text = pasteText.value.trim();
   if (!text) { detailRows.value = []; return; }
-
   const lines = parseTSV(text);
-  const rows: DetailRow[] = [];
-
-  for (const cells of lines) {
-    const row: DetailRow = {};
-    PASTE_COLS.forEach((col, i) => {
-      if (col === '_金额') return;
-      row[col] = (cells[i] ?? '').trim();
-    });
-    // 自动计算金额
-    const qty = parseFloat(row['数量'] ?? '');
-    const price = parseFloat(row['单价'] ?? '');
-    row['金额'] = (!isNaN(qty) && !isNaN(price))
-      ? String(Math.round(qty * price * 100) / 100)
-      : '';
-    rows.push(row);
-  }
-
+  const rows = lines.map(cells => buildDetailRow(cells));
   if (rows.length === 0) {
     parseError.value = '未能解析出有效数据，请确认是从 Excel 直接复制的内容';
     return;
@@ -99,11 +72,22 @@ function parsePaste() {
   detailRows.value = rows;
 }
 
-// 粘贴时自动触发解析（只用 paste 事件，不用 input 避免重复）
+function parseFromHtml(html: string): DetailRow[] {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  const rows: DetailRow[] = [];
+  doc.querySelectorAll('tr').forEach(tr => {
+    const cells = Array.from(tr.querySelectorAll('td, th')).map(td => (td.textContent ?? '').trim());
+    if (cells.length === 0 || cells.every(c => c === '')) return;
+    const row = buildDetailRow(cells);
+    if (!row['产品名称'] && !row['数量']) return;
+    rows.push(row);
+  });
+  return rows;
+}
+
 function onPaste(e: ClipboardEvent) {
   e.preventDefault();
-
-  // 优先用 HTML 格式解析（Excel 复制时结构更可靠，不会重复）
   const html = e.clipboardData?.getData('text/html') ?? '';
   if (html) {
     const rows = parseFromHtml(html);
@@ -114,116 +98,17 @@ function onPaste(e: ClipboardEvent) {
       return;
     }
   }
-
-  // 降级：纯文本 TSV
   const text = e.clipboardData?.getData('text/plain') ?? '';
   pasteText.value = text;
   parsePaste();
 }
 
-/**
- * 从 Excel 复制的 HTML 表格中解析数据
- * 比纯文本更可靠，不会有单元格内换行导致的行错乱
- */
-function parseFromHtml(html: string): DetailRow[] {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
-  const trs = doc.querySelectorAll('tr');
-  const rows: DetailRow[] = [];
-
-  trs.forEach(tr => {
-    const cells = Array.from(tr.querySelectorAll('td, th'))
-      .map(td => (td.textContent ?? '').trim());
-    if (cells.length === 0 || cells.every(c => c === '')) return;
-
-    const row: DetailRow = {};
-    PASTE_COLS.forEach((col, i) => {
-      if (col === '_金额') return;
-      row[col] = (cells[i] ?? '').trim();
-    });
-
-    // 跳过全空行
-    if (!row['产品名称'] && !row['数量']) return;
-
-    const qty = parseFloat(row['数量'] ?? '');
-    const price = parseFloat(row['单价'] ?? '');
-    row['金额'] = (!isNaN(qty) && !isNaN(price))
-      ? String(Math.round(qty * price * 100) / 100)
-      : '';
-    rows.push(row);
-  });
-
-  return rows;
-}
-
-// 删除某行
-function removeRow(idx: number) {
-  detailRows.value.splice(idx, 1);
-}
-
-// 新增空行
-function addRow() {
-  const row: DetailRow = {};
-  DETAIL_COLS.forEach(c => { row[c] = ''; });
-  detailRows.value.push(row);
-}
-
-// 重新计算某行金额
-function recalcRow(row: DetailRow) {
-  const qty = parseFloat(row['数量'] ?? '');
-  const price = parseFloat(row['单价'] ?? '');
-  row['金额'] = (!isNaN(qty) && !isNaN(price))
-    ? String(Math.round(qty * price * 100) / 100)
-    : '';
-}
-
-// 校验日期格式 YYYY-MM-DD
-function isValidDate(val: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(val.trim());
-}
-
-// ── 校验 ──────────────────────────────────────────────────
-const canSave = computed(() =>
-  basicInfo.value.合同号.trim() !== '' &&
-  basicInfo.value.客户.trim() !== '' &&
-  (basicInfo.value.销售日期 === '' || isValidDate(basicInfo.value.销售日期)) &&
-  detailRows.value.length > 0
-);
-
 // ── 保存 ──────────────────────────────────────────────────
-const isSaving = ref(false);
-const toastMsg = ref('');
-
 async function doSave() {
   if (!canSave.value) return;
   isSaving.value = true;
   try {
-    const { invoke } = await import('@tauri-apps/api/tauri');
-
-    for (const row of detailRows.value) {
-      const rowData: Record<string, string> = {
-        客户: basicInfo.value.客户,
-        销售日期: basicInfo.value.销售日期,
-        合同号: basicInfo.value.合同号,
-        项目名称: basicInfo.value.项目名称,
-        供应商: basicInfo.value.供应商,
-        下单人: row['下单人'] ?? '',
-        序号: row['序号'] ?? '',
-        产品名称: row['产品名称'] ?? '',
-        规格: row['规格'] ?? '',
-        特征: row['特征'] ?? '',
-        数量: row['数量'] ?? '',
-        单位: row['单位'] ?? '',
-        单价: row['单价'] ?? '',
-        安装位置: row['安装位置'] ?? '',
-        备注: row['备注'] ?? '',
-        初始报价: row['初始报价'] ?? '',
-        税率: row['税率'] ? String(parseFloat(row['税率']) / 100) : '',
-        成本单价含税: row['成本单价含税'] ?? '',
-      };
-      await invoke('save_sales_row', { id: null, rowData });
-    }
-
+    await saveRows(detailRows.value);
     toastMsg.value = `保存成功，共 ${detailRows.value.length} 条明细`;
     setTimeout(() => { emit('saved'); emit('close'); }, 1200);
   } catch (e) {
@@ -238,16 +123,11 @@ const showCloseConfirm = ref(false);
 
 function hasData(): boolean {
   return Object.values(basicInfo.value).some(v => v.trim() !== '') ||
-    detailRows.value.length > 0 ||
-    pasteText.value.trim() !== '';
+    detailRows.value.length > 0 || pasteText.value.trim() !== '';
 }
 
 function tryClose() {
-  if (hasData()) {
-    showCloseConfirm.value = true;
-  } else {
-    emit('close');
-  }
+  if (hasData()) { showCloseConfirm.value = true; } else { emit('close'); }
 }
 
 function confirmClose() {
@@ -255,7 +135,6 @@ function confirmClose() {
   emit('close');
 }
 
-// ── ESC 关闭 ──────────────────────────────────────────────
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
     if (showCloseConfirm.value) { showCloseConfirm.value = false; return; }

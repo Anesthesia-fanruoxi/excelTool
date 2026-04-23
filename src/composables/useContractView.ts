@@ -46,6 +46,9 @@ export function useContractView() {
       contracts.value = await invoke<ContractSummary[]>('query_contracts', {
         statusFilter: statusFilter.value,
       });
+      // 清除明细缓存，确保下次展开时重新加载最新数据
+      expandedRows.value = {};
+      expandedContract.value = null;
     } catch (e) {
       showToast(`加载失败: ${e}`, 'error');
     } finally {

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue';
-import { useCopyCell } from '@/composables/useCopyCell.ts';
-import { SALES_FORM_GROUPS } from '@/constants/salesColumns.ts';
-import type { SalesRow } from '@/constants/salesColumns.ts';
+import { useCopyCell } from '@/composables/useCopyCell';
+import { SALES_FORM_GROUPS } from '@/constants/salesColumns';
+import type { SalesRow } from '@/constants/salesColumns';
 
 defineProps<{ row: SalesRow }>();
 

@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
+import { invoke } from '@tauri-apps/api/tauri';
+import {
+  useContractForm, DETAIL_COLS, isValidDate, recalcRow,
+  type DetailRow,
+} from '@/composables/useContractForm';
 import type { ContractSummary } from '@/composables/useContractView';
 
 const props = defineProps<{ contract: ContractSummary }>();
@@ -8,8 +13,9 @@ const emit = defineEmits<{
   (e: 'saved'): void;
 }>();
 
-// ── 基本信息 ──────────────────────────────────────────────
-const basicInfo = ref({
+const {
+  basicInfo, detailRows, isSaving, toastMsg, canSave, addRow, removeRow, saveRows,
+} = useContractForm({
   项目名称: props.contract.project_name,
   客户: props.contract.customer,
   供应商: '',
@@ -17,32 +23,20 @@ const basicInfo = ref({
   合同号: props.contract.contract_no,
 });
 
-const DETAIL_COLS = ['序号', '产品名称', '规格', '特征', '数量', '单位', '单价', '金额', '下单人', '安装位置', '备注', '初始报价', '税率', '成本单价含税'];
-
-type DetailRow = Record<string, string>;
-
-const detailRows = ref<DetailRow[]>([]);
-const originalIds = ref<Set<number>>(new Set()); // 原始行的 __id 集合
+const originalIds = ref<Set<number>>(new Set());
 const isLoading = ref(false);
-const isSaving = ref(false);
-const toastMsg = ref('');
 
-// ── 加载已有明细 ──────────────────────────────────────────
 async function loadDetail() {
   isLoading.value = true;
   try {
-    const { invoke } = await import('@tauri-apps/api/tauri');
     const rows: DetailRow[] = await invoke('query_contract_detail', {
       contractNo: props.contract.contract_no,
     });
-    // 税率转为显示用整数
     detailRows.value = rows.map(r => ({
       ...r,
       税率: r['税率'] ? String(Math.round(parseFloat(r['税率']) * 100)) : '',
     }));
-    // 记录原始 ID 集合，用于保存时删除被移除的行
     originalIds.value = new Set(rows.map(r => Number(r['__id'])).filter(Boolean));
-    // 从第一行取供应商
     if (rows.length > 0) basicInfo.value.供应商 = rows[0]['供应商'] ?? '';
   } catch (e) {
     toastMsg.value = `加载失败: ${e}`;
@@ -51,88 +45,13 @@ async function loadDetail() {
   }
 }
 
-// ── 行操作 ────────────────────────────────────────────────
-function recalcRow(row: DetailRow) {
-  const qty = parseFloat(row['数量'] ?? '');
-  const price = parseFloat(row['单价'] ?? '');
-  row['金额'] = (!isNaN(qty) && !isNaN(price))
-    ? String(Math.round(qty * price * 100) / 100) : '';
-}
-
-function addRow() {
-  const row: DetailRow = {};
-  DETAIL_COLS.forEach(c => { row[c] = ''; });
-  detailRows.value.push(row);
-}
-
-function removeRow(idx: number) {
-  detailRows.value.splice(idx, 1);
-}
-
-// ── 校验 ──────────────────────────────────────────────────
-function isValidDate(val: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(val.trim());
-}
-
-const canSave = computed(() =>
-  basicInfo.value.合同号.trim() !== '' &&
-  basicInfo.value.客户.trim() !== '' &&
-  (basicInfo.value.销售日期 === '' || isValidDate(basicInfo.value.销售日期)) &&
-  detailRows.value.length > 0
-);
-
-// ── 保存 ──────────────────────────────────────────────────
 async function doSave() {
   if (!canSave.value) return;
   isSaving.value = true;
   try {
-    const { invoke } = await import('@tauri-apps/api/tauri');
-
-    // 1. 删除被移除的行（原来有、现在没有的）
-    const currentIds = new Set(
-      detailRows.value.map(r => Number(r['__id'])).filter(Boolean)
-    );
-    for (const id of originalIds.value) {
-      if (!currentIds.has(id)) {
-        await invoke('delete_sales_row', { id });
-      }
-    }
-
-    // 2. 保存/新增现有行
-    for (const row of detailRows.value) {
-      const rowData: Record<string, string> = {
-        客户: basicInfo.value.客户,
-        销售日期: basicInfo.value.销售日期,
-        合同号: basicInfo.value.合同号,
-        项目名称: basicInfo.value.项目名称,
-        供应商: basicInfo.value.供应商,
-        下单人: row['下单人'] ?? '',
-        序号: row['序号'] ?? '',
-        产品名称: row['产品名称'] ?? '',
-        规格: row['规格'] ?? '',
-        特征: row['特征'] ?? '',
-        数量: row['数量'] ?? '',
-        单位: row['单位'] ?? '',
-        单价: row['单价'] ?? '',
-        安装位置: row['安装位置'] ?? '',
-        备注: row['备注'] ?? '',
-        初始报价: row['初始报价'] ?? '',
-        税率: row['税率'] ? String(parseFloat(row['税率']) / 100) : '',
-        成本单价含税: row['成本单价含税'] ?? '',
-        // 保留签收/对账字段
-        签收人: row['签收人'] ?? '',
-        签收日期: row['签收日期'] ?? '',
-        与客户对账时间: row['与客户对账时间'] ?? '',
-        对账数量: row['对账数量'] ?? '',
-        对账单价: row['对账单价'] ?? '',
-        对账日期: row['对账日期'] ?? '',
-        对账金额: row['对账金额'] ?? '',
-        对账备注: row['对账备注'] ?? '',
-      };
-      const id = row['__id'] ? Number(row['__id']) : null;
-      await invoke('save_sales_row', { id, rowData });
-    }
-
+    const currentIds = new Set(detailRows.value.map(r => Number(r['__id'])).filter(Boolean));
+    const deletedIds = [...originalIds.value].filter(id => !currentIds.has(id));
+    await saveRows(detailRows.value, deletedIds);
     toastMsg.value = `保存成功，共 ${detailRows.value.length} 条明细`;
     setTimeout(() => { emit('saved'); emit('close'); }, 1000);
   } catch (e) {
@@ -142,7 +61,6 @@ async function doSave() {
   }
 }
 
-// ── ESC 关闭 ──────────────────────────────────────────────
 const showConfirm = ref(false);
 function tryClose() { showConfirm.value = true; }
 function confirmClose() { showConfirm.value = false; emit('close'); }

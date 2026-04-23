@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, computed, ref } from 'vue';
-import { SALES_FORM_GROUPS, COMPUTED_COLUMNS } from '@/constants/salesColumns.ts';
-import type { SalesRow } from '@/constants/salesColumns.ts';
+import { SALES_FORM_GROUPS, COMPUTED_COLUMNS } from '@/constants/salesColumns';
+import type { SalesRow } from '@/constants/salesColumns';
 
 const props = defineProps<{
   mode: 'add' | 'edit';
