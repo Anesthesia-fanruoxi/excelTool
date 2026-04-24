@@ -8,17 +8,23 @@ export interface SheetInfo {
 export interface ExcelData {
   sheets: SheetInfo[];
   file_path: string;
+  file_name: string;
 }
 
-export interface VaultEntry {
+export interface TabData {
   id: string;
-  name: string;
-  data: string[][];
-  headers: string[];
-  imported_at: string;
-  source_file: string;
+  fileName: string;
+  filePath: string;
+  sheetName: string;
+  sheetIndex: number;
+  tableName: string;
+  headers: string[];  // 完整表头（含公式列标记 [公式]）
 }
 
-export interface VaultData {
-  entries: VaultEntry[];
+export interface PageResult {
+  columns: string[];
+  rows: (string | null)[][];
+  total: number;
+  page: number;
+  page_size: number;
 }

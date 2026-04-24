@@ -3,6 +3,7 @@
 mod commands;
 mod db;
 mod excel;
+mod formula;
 mod machine_id;
 
 use db::Database;
@@ -18,34 +19,13 @@ fn main() {
     tauri::Builder::default()
         .manage(db)
         .invoke_handler(tauri::generate_handler![
-            // Excel
             commands::open_excel,
-            commands::get_sheets,
             commands::read_sheet_data,
-            // 报价表
-            commands::import_quote_items,
-            commands::get_quote_stats,
-            commands::clear_quote_table,
-            commands::query_quote_page,
-            commands::update_quote_item,
-            commands::query_price_history,
-            // 销售表
-            commands::import_sales_items,
-            commands::get_table_stats,
-            commands::clear_sales_table,
-            commands::query_sales_page,
-            commands::update_sales_item_price,
-            // 合同管理
-            commands::create_contract,
-            commands::query_contracts,
-            commands::query_contract_detail,
-            // 数据预览
-            commands::preview_quote_data,
-            commands::preview_sales_data,
-            // 最近文件
-            commands::get_recent_files,
-            commands::add_recent_file,
-            // 机器码
+            commands::import_sheet,
+            commands::query_page,
+            commands::get_row_ids,
+            commands::update_cell,
+            commands::drop_table,
             machine_id::get_machine_id,
         ])
         .run(tauri::generate_context!())

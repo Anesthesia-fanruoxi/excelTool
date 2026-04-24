@@ -16,6 +16,7 @@ const emit = defineEmits<{
 
 const menus: MenuItem[] = [
   { key: 'quote',    label: '报价明细', icon: '💰' },
+  { key: 'purchase', label: '采购单',   icon: '🛒' },
   { key: 'contract', label: '合同管理', icon: '📄' },
   { key: 'sales',    label: '销售明细', icon: '📋' },
   { key: 'sign',     label: '签收对账', icon: '✅' },
