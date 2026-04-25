@@ -112,7 +112,7 @@ impl Database {
             .join(", ");
 
         let sql = format!(
-            "SELECT {} FROM \"{}\" {} ORDER BY __id ASC LIMIT {} OFFSET {}",
+            "SELECT {} FROM \"{}\" {} ORDER BY __id DESC LIMIT {} OFFSET {}",
             col_select, table_name, where_clause, page_size, offset
         );
 
@@ -157,7 +157,7 @@ impl Database {
         };
         let offset = (page.saturating_sub(1)) * page_size;
         let sql = format!(
-            "SELECT __id FROM \"{}\" {} ORDER BY __id ASC LIMIT {} OFFSET {}",
+            "SELECT __id FROM \"{}\" {} ORDER BY __id DESC LIMIT {} OFFSET {}",
             table_name, where_clause, page_size, offset
         );
         let mut stmt = conn.prepare(&sql)?;

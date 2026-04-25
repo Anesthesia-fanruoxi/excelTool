@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// 简单公式计算引擎
 /// 支持：IF, IFS, YEAR, 四则运算, 字符串拼接(&), 比较运算
 /// 列引用：A=col0, B=col1, ... 使用行数据 Vec<Option<String>> 按索引取值

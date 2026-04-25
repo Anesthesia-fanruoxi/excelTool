@@ -4,7 +4,6 @@ mod commands;
 mod db;
 mod excel;
 mod formula;
-mod machine_id;
 
 use db::Database;
 use log::info;
@@ -26,7 +25,6 @@ fn main() {
             commands::get_row_ids,
             commands::update_cell,
             commands::drop_table,
-            machine_id::get_machine_id,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
