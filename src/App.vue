@@ -39,11 +39,13 @@ async function openFile() {
 async function createTab(excel: ExcelData, sheetIndex: number) {
   const sheet = excel.sheets[sheetIndex];
   const id    = genId();
-  const raw = await invoke<string[][]>('read_sheet_data', { path: excel.file_path, sheetIndex });
+  const result = await invoke<{ rows: string[][], formulas: [number, string][] }>('read_sheet_data', { path: excel.file_path, sheetIndex });
+  const raw = result.rows;
+  const formulas = result.formulas;
   if (!raw || raw.length === 0) { alert('Sheet 无数据'); return; }
   const headers = raw[0].map((h, i) => h?.trim() || `列${i + 1}`);
   const rows    = raw.slice(1);
-  await invoke('import_sheet', { tableName: id, headers, rows });
+  await invoke('import_sheet', { tableName: id, headers, rows, formulas });
   const tab: TabData = {
     id,
     fileName:  excel.file_name,

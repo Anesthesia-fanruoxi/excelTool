@@ -69,8 +69,8 @@ pub fn open_excel_file(path: &str) -> Result<Vec<SheetInfo>, ExcelError> {
     Ok(sheets)
 }
 
-/// 读取 sheet，返回所有行（第一行为表头，公式列表头带 [公式] 后缀）
-pub fn read_sheet_data(path: &str, sheet_index: usize) -> Result<Vec<Vec<String>>, ExcelError> {
+/// 读取 sheet，返回 (所有行数据, 公式列map: col_index -> formula_str)
+pub fn read_sheet_data(path: &str, sheet_index: usize) -> Result<(Vec<Vec<String>>, Vec<(usize, String)>), ExcelError> {
     let mut workbook =
         open_workbook_auto(path).map_err(|e| ExcelError::OpenError(e.to_string()))?;
 
@@ -91,11 +91,13 @@ pub fn read_sheet_data(path: &str, sheet_index: usize) -> Result<Vec<Vec<String>
         .collect();
 
     if all_rows.is_empty() {
-        return Ok(all_rows);
+        return Ok((all_rows, vec![]));
     }
 
     // 检测公式列（只看第一行数据）
     let mut formula_cols = HashSet::new();
+    // 公式字符串 col_index -> formula_str
+    let mut formula_map: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
 
     if let Ok(frange) = workbook.worksheet_formula(&sheet_name) {
         let fstart_row = frange.start().map(|(r, _)| r).unwrap_or(0) as usize;
@@ -103,21 +105,33 @@ pub fn read_sheet_data(path: &str, sheet_index: usize) -> Result<Vec<Vec<String>
         let dstart_row = range.start().map(|(r, _)| r).unwrap_or(0) as usize;
         let dstart_col = range.start().map(|(_, c)| c).unwrap_or(0) as usize;
 
+        info!("[formula] frange start=({},{}) drange start=({},{})",
+            fstart_row, fstart_col, dstart_row, dstart_col);
+
         if all_rows.len() > 1 {
             let first_data_abs_row = dstart_row + 1;
             let frel_row = first_data_abs_row.saturating_sub(fstart_row);
+
+            info!("[formula] checking first data row: abs={} frel={}", first_data_abs_row, frel_row);
 
             for c_idx in 0..all_rows[0].len() {
                 let abs_col = dstart_col + c_idx;
                 let frel_col = abs_col.saturating_sub(fstart_col);
                 if let Some(f) = frange.get((frel_row, frel_col)) {
                     if !f.trim().is_empty() {
+                        info!("[formula] col={} frel_col={} formula={:?}", c_idx, frel_col, f);
                         formula_cols.insert(c_idx);
+                        formula_map.insert(c_idx, f.to_string());
                     }
                 }
             }
         }
+    } else {
+        info!("[formula] worksheet_formula not available for sheet={}", sheet_name);
     }
+
+    info!("[formula] detected {} formula cols: {:?}", formula_map.len(),
+        formula_map.iter().map(|(k,v)| format!("col{}={}", k, v)).collect::<Vec<_>>());
 
     // 表头公式列加 [公式] 后缀
     if let Some(header) = all_rows.first_mut() {
@@ -130,6 +144,8 @@ pub fn read_sheet_data(path: &str, sheet_index: usize) -> Result<Vec<Vec<String>
         }
     }
 
-    info!("[excel] sheet='{}' {} rows, {} formula cols", sheet_name, all_rows.len(), formula_cols.len());
-    Ok(all_rows)
+    info!("[excel] sheet='{}' {} rows, {} formula cols", sheet_name, all_rows.len(), formula_map.len());
+
+    let formulas: Vec<(usize, String)> = formula_map.into_iter().collect();
+    Ok((all_rows, formulas))
 }

@@ -99,7 +99,11 @@ fn format_number(n: f64) -> String {
     if n.fract() == 0.0 && n.abs() < 1e15 {
         format!("{}", n as i64)
     } else {
-        format!("{}", n)
+        // 保留最多10位有效数字，去掉尾部多余的0
+        let s = format!("{:.10}", n);
+        let s = s.trim_end_matches('0');
+        let s = s.trim_end_matches('.');
+        s.to_string()
     }
 }
 

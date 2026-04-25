@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, computed, onUnmounted } from 'vue';
+import { ref, watch, onMounted, onUnmounted, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/tauri';
+import { save } from '@tauri-apps/api/dialog';
 import type { TabData, PageResult } from '../types';
 
 const props = defineProps<{ tab: TabData }>();
@@ -94,7 +95,10 @@ async function openDropdown(e: MouseEvent, col: string, colIdx: number) {
   sortBy.value = 'default';
 }
 
-function closeDropdown() { dropdown.value = null; }
+function closeDropdown() {
+  if (editing.value) return;
+  dropdown.value = null;
+}
 
 const filteredDropdownVals = computed(() => {
   if (!dropdown.value) return [];
@@ -244,11 +248,9 @@ onUnmounted(() => {
 });
 
 // 公式列
-const formulaCols = computed(() => {
-  const set = new Set<number>();
-  columns.value.forEach((col, idx) => { if (col.endsWith('[公式]')) set.add(idx); });
-  return set;
-});
+function isFormulaCol(colIdx: number) {
+  return columns.value[colIdx]?.endsWith('[公式]') ?? false;
+}
 
 async function loadPage() {
   if (!props.tab.tableName) return;
@@ -286,6 +288,9 @@ async function loadPage() {
 }
 
 function startEdit(rowIdx: number, colIdx: number) {
+  console.log('[edit] dblclick', rowIdx, colIdx, 'isFormula:', isFormulaCol(colIdx));
+  if (isFormulaCol(colIdx)) return;
+  closeDropdown();
   editing.value = { rowIdx, colIdx };
   editVal.value = rows.value[rowIdx][colIdx] ?? '';
 }
@@ -298,14 +303,36 @@ async function commitEdit() {
   const val   = editVal.value;
   editing.value = null;
   try {
-    await invoke('update_cell', { tableName: props.tab.tableName, rowId, column: col, value: val });
+    const recalcResults = await invoke<[number, string][]>('update_cell', {
+      tableName: props.tab.tableName,
+      rowId, column: col, value: val,
+    });
+    // 更新普通列
     rows.value[rowIdx][colIdx] = val;
+    // 更新重算后的公式列
+    for (const [ci, newVal] of recalcResults) {
+      rows.value[rowIdx][ci] = newVal || null;
+    }
   } catch (e) {
     alert(`保存失败: ${e}`);
   }
 }
 
 function cancelEdit() { editing.value = null; }
+
+async function exportExcel() {
+  const savePath = await save({
+    filters: [{ name: 'Excel', extensions: ['xlsx'] }],
+    defaultPath: props.tab.fileName.replace(/\.[^.]+$/, '') + '_导出.xlsx',
+  });
+  if (!savePath) return;
+  try {
+    await invoke('export_excel', { tableName: props.tab.tableName, savePath });
+    alert('导出成功');
+  } catch (e) {
+    alert(`导出失败: ${e}`);
+  }
+}
 
 watch(() => props.tab.tableName, () => {
   filters.value = [];
@@ -360,6 +387,7 @@ onMounted(() => {
         </div>
         <button v-if="Object.keys(appliedColFilterMap).length > 0 && filters.length === 0" class="btn-reset" @click="onReset">清除筛选</button>
         <span class="stat">共 <b>{{ total }}</b> 行</span>
+        <button class="btn-export" @click="exportExcel">导出 Excel</button>
       </div>
 
       <!-- 第二行：搜索条件（有条件时才显示） -->
@@ -420,9 +448,9 @@ onMounted(() => {
               v-for="cIdx in visibleColIndices"
               :key="cIdx"
               class="td cell"
-              :class="{ 'cell-formula': formulaCols.has(cIdx) }"
+              :class="{ 'cell-formula': isFormulaCol(cIdx) }"
               :style="{ width: colWidths[cIdx] + 'px', minWidth: colWidths[cIdx] + 'px' }"
-              @dblclick="startEdit(rIdx, cIdx)"
+              @dblclick.stop="startEdit(rIdx, cIdx)"
             >
               <template v-if="editing && editing.rowIdx === rIdx && editing.colIdx === cIdx">
                 <input v-model="editVal" class="cell-inp" autofocus @blur="commitEdit" @keydown.enter="commitEdit" @keydown.esc="cancelEdit" />
@@ -506,7 +534,9 @@ onMounted(() => {
 .btn-search:hover { background: #4096ff; }
 .btn-reset { padding: 5px 12px; background: #fff; border: 1px solid #d9d9d9; border-radius: 4px; color: #595959; font-size: 13px; cursor: pointer; align-self: flex-start; }
 .btn-reset:hover { border-color: #1677ff; color: #1677ff; }
-.stat { font-size: 12px; color: #8c8c8c; align-self: center; margin-left: auto; }
+.stat { font-size: 12px; color: #8c8c8c; align-self: center; }
+.btn-export { padding: 5px 12px; background: #52c41a; border: none; border-radius: 4px; color: #fff; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.btn-export:hover { background: #73d13d; }
 .stat b { color: #1677ff; }
 
 .table-wrap { flex: 1; overflow: hidden; background: #fff; }
@@ -531,7 +561,7 @@ onMounted(() => {
 
 .col-seq { width: 46px !important; min-width: 46px !important; text-align: center; color: #bfbfbf; background: #fafafa; font-size: 12px; justify-content: center; padding-right: 10px; }
 .cell { cursor: default; background: #fff; }
-.cell-formula { background: #f6ffed !important; }
+.cell-formula { background: #f6ffed !important; cursor: not-allowed; }
 .formula-badge { flex-shrink: 0; display: inline-block; padding: 0 3px; background: #389e0d; color: #fff; border-radius: 3px; font-size: 10px; font-family: monospace; }
 .cell-inp { width: 100%; padding: 2px 4px; border: 2px solid #1677ff; border-radius: 2px; font-size: 13px; outline: none; background: #fff; }
 

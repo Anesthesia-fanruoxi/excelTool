@@ -25,6 +25,7 @@ fn main() {
             commands::get_row_ids,
             commands::get_distinct_values,
             commands::update_cell,
+            commands::export_excel,
             commands::drop_table,
         ])
         .run(tauri::generate_context!())
