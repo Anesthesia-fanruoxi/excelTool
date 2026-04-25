@@ -76,13 +76,37 @@ impl Database {
         Ok(count)
     }
 
+    pub fn get_distinct_values(&self, table_name: &str, column: &str) -> SqlResult<Vec<(String, i64)>> {
+        let conn = self.conn.lock().unwrap();
+        let col = column.replace('"', "");
+        // 非空值
+        let sql = format!(
+            "SELECT \"{}\", COUNT(*) FROM \"{}\" WHERE \"{}\" IS NOT NULL AND \"{}\" != '' GROUP BY \"{}\" ORDER BY \"{}\" ASC",
+            col, table_name, col, col, col, col
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let mut vals: Vec<(String, i64)> = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?
+            .filter_map(|r| r.ok())
+            .collect();
+        // 空值数量
+        let empty_count: i64 = conn.query_row(
+            &format!("SELECT COUNT(*) FROM \"{}\" WHERE \"{}\" IS NULL OR \"{}\" = ''", table_name, col, col),
+            [], |r| r.get(0),
+        ).unwrap_or(0);
+        if empty_count > 0 {
+            vals.push(("__EMPTY__".to_string(), empty_count));
+        }
+        Ok(vals)
+    }
+
     pub fn query_page(
         &self,
         table_name: &str,
         page: usize,
         page_size: usize,
-        keyword: &str,
-        search_col: &str,
+        filters: &[(String, String)],
+        col_filters: &[(String, Vec<String>)],
     ) -> SqlResult<PageResult> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(&format!("PRAGMA table_info(\"{}\")", table_name))?;
@@ -92,12 +116,7 @@ impl Database {
             .filter(|c| c != "__id")
             .collect();
 
-        let where_clause = if !keyword.is_empty() && !search_col.is_empty() {
-            let clean_col = search_col.trim_end_matches("[公式]").replace('"', "");
-            format!("WHERE \"{}\" LIKE '%{}%'", clean_col, keyword.replace('\'', "''"))
-        } else {
-            String::new()
-        };
+        let where_clause = build_where(filters, col_filters);
 
         let total: i64 = conn.query_row(
             &format!("SELECT COUNT(*) FROM \"{}\" {}", table_name, where_clause),
@@ -147,14 +166,9 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_row_ids(&self, table_name: &str, page: usize, page_size: usize, keyword: &str, search_col: &str) -> SqlResult<Vec<i64>> {
+    pub fn get_row_ids(&self, table_name: &str, page: usize, page_size: usize, filters: &[(String, String)], col_filters: &[(String, Vec<String>)]) -> SqlResult<Vec<i64>> {
         let conn = self.conn.lock().unwrap();
-        let where_clause = if !keyword.is_empty() && !search_col.is_empty() {
-            let clean_col = search_col.trim_end_matches("[公式]").replace('"', "");
-            format!("WHERE \"{}\" LIKE '%{}%'", clean_col, keyword.replace('\'', "''"))
-        } else {
-            String::new()
-        };
+        let where_clause = build_where(filters, col_filters);
         let offset = (page.saturating_sub(1)) * page_size;
         let sql = format!(
             "SELECT __id FROM \"{}\" {} ORDER BY __id DESC LIMIT {} OFFSET {}",
@@ -174,4 +188,44 @@ fn get_db_path() -> PathBuf {
     let app_dir = home.join(".excel-tool");
     std::fs::create_dir_all(&app_dir).ok();
     app_dir.join("data.db")
+}
+
+/// 构建多条件 WHERE 子句，条件之间 AND
+/// filters: (col, keyword) LIKE 模糊搜索
+/// col_filters: (col, [val1, val2]) IN 精确筛选
+fn build_where(filters: &[(String, String)], col_filters: &[(String, Vec<String>)]) -> String {
+    let mut clauses: Vec<String> = vec![];
+
+    for (col, kw) in filters {
+        if col.is_empty() || kw.is_empty() { continue; }
+        let clean = col.replace('"', "");
+        clauses.push(format!("\"{}\" LIKE '%{}%'", clean, kw.replace('\'', "''")));
+    }
+
+    for (col, vals) in col_filters {
+        if col.is_empty() || vals.is_empty() { continue; }
+        let clean = col.replace('"', "");
+        let has_empty = vals.iter().any(|v| v == "__EMPTY__");
+        let non_empty: Vec<_> = vals.iter().filter(|v| v.as_str() != "__EMPTY__").collect();
+        let mut sub = vec![];
+        if !non_empty.is_empty() {
+            let in_list = non_empty.iter()
+                .map(|v| format!("'{}'", v.replace('\'', "''")))
+                .collect::<Vec<_>>()
+                .join(", ");
+            sub.push(format!("\"{}\" IN ({})", clean, in_list));
+        }
+        if has_empty {
+            sub.push(format!("(\"{}\" IS NULL OR \"{}\" = '')", clean, clean));
+        }
+        if !sub.is_empty() {
+            clauses.push(format!("({})", sub.join(" OR ")));
+        }
+    }
+
+    if clauses.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", clauses.join(" AND "))
+    }
 }

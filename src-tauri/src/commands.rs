@@ -46,10 +46,10 @@ pub fn query_page(
     table_name: String,
     page: usize,
     page_size: usize,
-    keyword: String,
-    search_col: String,
+    filters: Vec<(String, String)>,
+    col_filters: Vec<(String, Vec<String>)>,
 ) -> Result<PageResult, String> {
-    db.query_page(&table_name, page, page_size, &keyword, &search_col)
+    db.query_page(&table_name, page, page_size, &filters, &col_filters)
         .map_err(|e| e.to_string())
 }
 
@@ -59,10 +59,20 @@ pub fn get_row_ids(
     table_name: String,
     page: usize,
     page_size: usize,
-    keyword: String,
-    search_col: String,
+    filters: Vec<(String, String)>,
+    col_filters: Vec<(String, Vec<String>)>,
 ) -> Result<Vec<i64>, String> {
-    db.get_row_ids(&table_name, page, page_size, &keyword, &search_col)
+    db.get_row_ids(&table_name, page, page_size, &filters, &col_filters)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_distinct_values(
+    db: tauri::State<Arc<Database>>,
+    table_name: String,
+    column: String,
+) -> Result<Vec<(String, i64)>, String> {
+    db.get_distinct_values(&table_name, &column)
         .map_err(|e| e.to_string())
 }
 

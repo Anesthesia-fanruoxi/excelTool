@@ -23,6 +23,7 @@ fn main() {
             commands::import_sheet,
             commands::query_page,
             commands::get_row_ids,
+            commands::get_distinct_values,
             commands::update_cell,
             commands::drop_table,
         ])
