@@ -22,7 +22,6 @@ const filters = ref<Filter[]>([]);
 const appliedFilters = ref<Filter[]>([]);
 
 // 列筛选条件 (col -> Set<val>)
-const colFilterMap = ref<Record<string, Set<string>>>({});
 const appliedColFilterMap = ref<Record<string, string[]>>({});
 
 // 下拉面板状态
@@ -164,7 +163,7 @@ function hasColFilter(col: string) {
 function addFilter() {
   filters.value.push({ col: columns.value[0] ?? '', keyword: '' });
 }
-function removeFilter(idx: number) { filters.value.splice(idx, 1); }
+function removeFilter(idx: number) { filters.value.splice(idx, 1); onSearch(); }
 
 function onSearch() {
   appliedFilters.value = filters.value.filter(f => f.col && f.keyword.trim()).map(f => ({ ...f }));
@@ -185,7 +184,6 @@ const editing = ref<{ rowIdx: number; colIdx: number } | null>(null);
 const editVal = ref('');
 
 // 列宽
-const SEQ_WIDTH = 46;
 const DEFAULT_COL_WIDTH = 120;
 const MIN_COL_WIDTH = 40;
 const colWidths = ref<number[]>([]);
@@ -320,6 +318,35 @@ async function commitEdit() {
 
 function cancelEdit() { editing.value = null; }
 
+// 右键菜单
+const contextMenu = ref<{ x: number; y: number; content: string } | null>(null);
+
+function openContextMenu(e: MouseEvent, content: string) {
+  e.preventDefault();
+  e.stopPropagation();
+  contextMenu.value = { x: e.clientX, y: e.clientY, content };
+}
+
+function closeContextMenu() {
+  contextMenu.value = null;
+}
+
+async function copyCell() {
+  if (!contextMenu.value) return;
+  try {
+    await navigator.clipboard.writeText(contextMenu.value.content);
+  } catch {
+    // 降级方案
+    const ta = document.createElement('textarea');
+    ta.value = contextMenu.value.content;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+  closeContextMenu();
+}
+
 async function exportExcel() {
   const savePath = await save({
     filters: [{ name: 'Excel', extensions: ['xlsx'] }],
@@ -336,7 +363,7 @@ async function exportExcel() {
 
 watch(() => props.tab.tableName, () => {
   filters.value = [];
-  appliedFilters.value = {};
+  appliedFilters.value = [];
   appliedColFilterMap.value = {};
   colWidths.value = [];
   hiddenCols.value = new Set();
@@ -347,6 +374,7 @@ onMounted(() => {
   loadPage();
   document.addEventListener('click', () => {
     closeDropdown();
+    closeContextMenu();
     showColPanel.value = false;
   });
 });
@@ -394,10 +422,10 @@ onMounted(() => {
       <div v-if="filters.length > 0" class="toolbar-search">
         <div class="filter-list">
           <div v-for="(f, idx) in filters" :key="idx" class="filter-item">
-            <select v-model="f.col" class="col-select">
+            <select v-model="f.col" class="col-select" @change="onSearch">
               <option v-for="c in columns" :key="c" :value="c">{{ displayCol(c) }}</option>
             </select>
-            <input v-model="f.keyword" class="search-inp" placeholder="关键字..." @keydown.enter="onSearch" />
+            <input v-model="f.keyword" class="search-inp" placeholder="关键字..." @keydown.enter="onSearch" @blur="onSearch" />
             <button class="btn-remove" @click="removeFilter(idx)">✕</button>
           </div>
         </div>
@@ -451,6 +479,7 @@ onMounted(() => {
               :class="{ 'cell-formula': isFormulaCol(cIdx) }"
               :style="{ width: colWidths[cIdx] + 'px', minWidth: colWidths[cIdx] + 'px' }"
               @dblclick.stop="startEdit(rIdx, cIdx)"
+              @contextmenu="openContextMenu($event, row[cIdx] ?? '')"
             >
               <template v-if="editing && editing.rowIdx === rIdx && editing.colIdx === cIdx">
                 <input v-model="editVal" class="cell-inp" autofocus @blur="commitEdit" @keydown.enter="commitEdit" @keydown.esc="cancelEdit" />
@@ -461,6 +490,16 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- 右键菜单 -->
+    <Teleport to="body">
+      <div v-if="contextMenu" class="ctx-menu" :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }" @click.stop>
+        <div class="ctx-item" @click="copyCell">
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><rect x="4" y="1" width="8" height="9" rx="1.2" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="3.5" width="8" height="9" rx="1.2" fill="#fff" stroke="currentColor" stroke-width="1.2"/></svg>
+          复制单元格内容
+        </div>
+      </div>
+    </Teleport>
 
     <!-- 列筛选下拉面板 -->
     <Teleport to="body">
@@ -616,4 +655,26 @@ onMounted(() => {
 .cd-btn-ok:hover { background: #4096ff; }
 .cd-btn-cancel { padding: 5px 14px; background: #fff; border: 1px solid #d9d9d9; border-radius: 4px; color: #595959; font-size: 13px; cursor: pointer; }
 .cd-btn-cancel:hover { border-color: #1677ff; color: #1677ff; }
+
+.ctx-menu {
+  position: fixed;
+  z-index: 9999;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.14);
+  padding: 4px 0;
+  min-width: 160px;
+}
+.ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: #262626;
+  cursor: pointer;
+  user-select: none;
+}
+.ctx-item:hover { background: #e6f4ff; color: #1677ff; }
 </style>

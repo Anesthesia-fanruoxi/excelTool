@@ -21,15 +21,6 @@ pub fn col_letter_to_index(s: &str) -> Option<usize> {
 /// 计算一行中所有公式列的值
 /// formulas: Vec<(col_index, formula_str)>
 /// row: 完整行数据（含公式列占位 None，按 all_col_count 长度）
-pub fn compute_formula_cols(
-    formulas: &[(usize, String)],
-    row: &[Option<String>],
-) -> Vec<(usize, String)> {
-    formulas.iter().map(|(col_idx, formula)| {
-        let val = eval_formula(formula, row);
-        (*col_idx, val)
-    }).collect()
-}
 
 /// 对外入口：计算单个公式
 pub fn eval_formula(formula: &str, row: &[Option<String>]) -> String {

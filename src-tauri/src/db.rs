@@ -212,15 +212,6 @@ impl Database {
         Ok(PageResult { columns, rows, total, page, page_size })
     }
 
-    pub fn update_cell(&self, table_name: &str, row_id: i64, column: &str, value: &str) -> SqlResult<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            &format!("UPDATE \"{}\" SET \"{}\"=?1 WHERE __id=?2", table_name, column.replace('"', "")),
-            params![value, row_id],
-        )?;
-        Ok(())
-    }
-
     /// 更新单元格后重算该行公式列，返回 (col_index, new_value) 列表
     pub fn update_cell_and_recalc(&self, table_name: &str, row_id: i64, column: &str, value: &str) -> SqlResult<Vec<(usize, String)>> {
         // 1. 更新单元格
