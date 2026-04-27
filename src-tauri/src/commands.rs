@@ -38,6 +38,7 @@ pub fn read_sheet_data(path: String, sheet_index: usize) -> Result<SheetDataResu
 pub fn import_sheet(
     db: tauri::State<Arc<Database>>,
     table_name: String,
+    file_path: String,
     headers: Vec<String>,
     rows: Vec<Vec<String>>,
     formulas: Vec<(usize, String)>,
@@ -46,6 +47,10 @@ pub fn import_sheet(
     let count = db.insert_rows(&table_name, &headers, rows).map_err(|e| e.to_string())?;
     if !formulas.is_empty() {
         db.save_formulas(&table_name, &formulas).map_err(|e| e.to_string())?;
+    }
+    if !file_path.is_empty() {
+        db.save_file_path(&table_name, &file_path).map_err(|e| e.to_string())?;
+        info!("import_sheet: saved file_path={}", file_path);
     }
     info!("import_sheet: table={} count={} formulas={}", table_name, count, formulas.len());
     Ok(count)
@@ -95,8 +100,24 @@ pub fn update_cell(
     column: String,
     value: String,
 ) -> Result<Vec<(usize, String)>, String> {
-    db.update_cell_and_recalc(&table_name, row_id, &column, &value)
-        .map_err(|e| e.to_string())
+    let results = db.update_cell_and_recalc(&table_name, row_id, &column, &value)
+        .map_err(|e| e.to_string())?;
+    Ok(results)
+}
+
+#[tauri::command]
+pub fn save_to_file(
+    db: tauri::State<Arc<Database>>,
+    table_name: String,
+) -> Result<(), String> {
+    match db.get_file_path(&table_name) {
+        Ok(Some(file_path)) => {
+            info!("save_to_file: writing to {}", file_path);
+            write_excel_file(&db, &table_name, &file_path)
+        }
+        Ok(None) => Err("未找到关联文件路径".to_string()),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
@@ -105,6 +126,11 @@ pub fn export_excel(
     table_name: String,
     save_path: String,
 ) -> Result<(), String> {
+    write_excel_file(&db, &table_name, &save_path)
+}
+
+/// 将表数据写入 Excel 文件（供导出和自动写回共用）
+fn write_excel_file(db: &Database, table_name: &str, save_path: &str) -> Result<(), String> {
     use rust_xlsxwriter::{Workbook, Format, Formula};
 
     let (columns, rows) = db.export_all(&table_name).map_err(|e| e.to_string())?;

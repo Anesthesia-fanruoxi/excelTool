@@ -32,6 +32,10 @@ impl Database {
                 table_name TEXT NOT NULL,
                 col_index  INTEGER NOT NULL,
                 formula    TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS __file_map (
+                table_name TEXT PRIMARY KEY,
+                file_path  TEXT NOT NULL
             );"
         )?;
         info!("Database initialized at {:?}", db_path);
@@ -52,6 +56,25 @@ impl Database {
         ))?;
         info!("Created table: {} with {} columns", table_name, columns.len());
         Ok(())
+    }
+
+    pub fn save_file_path(&self, table_name: &str, file_path: &str) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO __file_map (table_name, file_path) VALUES (?1, ?2)",
+            params![table_name, file_path],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_file_path(&self, table_name: &str) -> SqlResult<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let result = conn.query_row(
+            "SELECT file_path FROM __file_map WHERE table_name=?1",
+            [table_name],
+            |r| r.get::<_, String>(0),
+        ).ok();
+        Ok(result)
     }
 
     pub fn save_formulas(&self, table_name: &str, formulas: &[(usize, String)]) -> SqlResult<()> {
@@ -313,7 +336,7 @@ impl Database {
             let col_select: String = columns.iter()
                 .map(|c| format!("\"{}\"", c.replace('"', "")))
                 .collect::<Vec<_>>().join(", ");
-            let sql = format!("SELECT {} FROM \"{}\" ORDER BY __id DESC", col_select, table_name);
+            let sql = format!("SELECT {} FROM \"{}\" ORDER BY __id ASC", col_select, table_name);
             let mut stmt = conn.prepare(&sql)?;
             let rows: Vec<Vec<Option<String>>> = stmt
                 .query_map([], |r| {

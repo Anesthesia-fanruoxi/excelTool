@@ -45,7 +45,7 @@ async function createTab(excel: ExcelData, sheetIndex: number) {
   if (!raw || raw.length === 0) { alert('Sheet 无数据'); return; }
   const headers = raw[0].map((h, i) => h?.trim() || `列${i + 1}`);
   const rows    = raw.slice(1);
-  await invoke('import_sheet', { tableName: id, headers, rows, formulas });
+  await invoke('import_sheet', { tableName: id, filePath: excel.file_path, headers, rows, formulas });
   const tab: TabData = {
     id,
     fileName:  excel.file_name,

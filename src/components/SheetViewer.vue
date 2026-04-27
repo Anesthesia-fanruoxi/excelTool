@@ -183,6 +183,25 @@ function onReset() {
 const editing = ref<{ rowIdx: number; colIdx: number } | null>(null);
 const editVal = ref('');
 
+// 修改记录: key = `${rowId}_${colIdx}`
+interface CellChange {
+  rowId: number;
+  rowIdx: number;  // 用于显示行号
+  colIdx: number;
+  colName: string;
+  oldVal: string;
+  newVal: string;
+}
+const modifiedCells = ref<Map<string, CellChange>>(new Map());
+
+// 保存确认弹窗
+const saveModal = ref(false);
+
+function isModified(rowIdx: number, colIdx: number) {
+  const rowId = rowIds.value[rowIdx];
+  return modifiedCells.value.has(`${rowId}_${colIdx}`);
+}
+
 // 列宽
 const DEFAULT_COL_WIDTH = 120;
 const MIN_COL_WIDTH = 40;
@@ -299,12 +318,24 @@ async function commitEdit() {
   const rowId = rowIds.value[rowIdx];
   const col   = columns.value[colIdx];
   const val   = editVal.value;
+  const oldVal = rows.value[rowIdx][colIdx] ?? '';
   editing.value = null;
   try {
     const recalcResults = await invoke<[number, string][]>('update_cell', {
       tableName: props.tab.tableName,
       rowId, column: col, value: val,
     });
+    // 记录修改（值有变化才记录）
+    if (val !== oldVal) {
+      const key = `${rowId}_${colIdx}`;
+      modifiedCells.value.set(key, {
+        rowId, rowIdx, colIdx,
+        colName: displayCol(col),
+        oldVal,
+        newVal: val,
+      });
+      modifiedCells.value = new Map(modifiedCells.value);
+    }
     // 更新普通列
     rows.value[rowIdx][colIdx] = val;
     // 更新重算后的公式列
@@ -347,6 +378,49 @@ async function copyCell() {
   closeContextMenu();
 }
 
+async function saveToFile() {
+  if (modifiedCells.value.size === 0) {
+    alert('没有需要保存的修改');
+    return;
+  }
+  saveModal.value = true;
+}
+
+async function confirmSave() {
+  saveModal.value = false;
+  try {
+    await invoke('save_to_file', { tableName: props.tab.tableName });
+    modifiedCells.value.clear();
+    modifiedCells.value = new Map(modifiedCells.value);
+    alert('保存成功');
+  } catch (e) {
+    alert(`保存失败: ${e}`);
+  }
+}
+
+async function revertChange(key: string) {
+  const change = modifiedCells.value.get(key);
+  if (!change) return;
+  const col = columns.value[change.colIdx];
+  try {
+    // 写回原始值到 DB
+    await invoke('update_cell', {
+      tableName: props.tab.tableName,
+      rowId: change.rowId,
+      column: col,
+      value: change.oldVal,
+    });
+    // 恢复页面显示
+    const rIdx = rows.value.findIndex((_, i) => rowIds.value[i] === change.rowId);
+    if (rIdx >= 0) rows.value[rIdx][change.colIdx] = change.oldVal || null;
+    // 移除修改记录
+    modifiedCells.value.delete(key);
+    modifiedCells.value = new Map(modifiedCells.value);
+  } catch (e) {
+    alert(`撤销失败: ${e}`);
+  }
+}
+
 async function exportExcel() {
   const savePath = await save({
     filters: [{ name: 'Excel', extensions: ['xlsx'] }],
@@ -367,6 +441,7 @@ watch(() => props.tab.tableName, () => {
   appliedColFilterMap.value = {};
   colWidths.value = [];
   hiddenCols.value = new Set();
+  modifiedCells.value = new Map();
   loadPage();
 });
 
@@ -415,6 +490,9 @@ onMounted(() => {
         </div>
         <button v-if="Object.keys(appliedColFilterMap).length > 0 && filters.length === 0" class="btn-reset" @click="onReset">清除筛选</button>
         <span class="stat">共 <b>{{ total }}</b> 行</span>
+        <button v-if="modifiedCells.size > 0" class="btn-save" @click="saveToFile">
+          💾 保存修改 <span class="save-badge">{{ modifiedCells.size }}</span>
+        </button>
         <button class="btn-export" @click="exportExcel">导出 Excel</button>
       </div>
 
@@ -476,7 +554,10 @@ onMounted(() => {
               v-for="cIdx in visibleColIndices"
               :key="cIdx"
               class="td cell"
-              :class="{ 'cell-formula': isFormulaCol(cIdx) }"
+              :class="{
+                'cell-formula': isFormulaCol(cIdx),
+                'cell-modified': isModified(rIdx, cIdx),
+              }"
               :style="{ width: colWidths[cIdx] + 'px', minWidth: colWidths[cIdx] + 'px' }"
               @dblclick.stop="startEdit(rIdx, cIdx)"
               @contextmenu="openContextMenu($event, row[cIdx] ?? '')"
@@ -497,6 +578,45 @@ onMounted(() => {
         <div class="ctx-item" @click="copyCell">
           <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><rect x="4" y="1" width="8" height="9" rx="1.2" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="3.5" width="8" height="9" rx="1.2" fill="#fff" stroke="currentColor" stroke-width="1.2"/></svg>
           复制单元格内容
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 保存确认弹窗 -->
+    <Teleport to="body">
+      <div v-if="saveModal" class="modal-mask" @click.self="saveModal = false">
+        <div class="save-modal">
+          <div class="save-modal-header">
+            <span>确认保存修改 <span class="save-count">{{ modifiedCells.size }} 处</span></span>
+            <button class="modal-close" @click="saveModal = false">✕</button>
+          </div>
+          <div class="save-modal-body">
+            <table class="change-table">
+              <thead>
+                <tr>
+                  <th>行号</th>
+                  <th>字段</th>
+                  <th>原始值</th>
+                  <th>修改值</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="[key, change] in modifiedCells" :key="key">
+                  <td class="ct-row">第 {{ change.rowIdx + 1 }} 行</td>
+                  <td class="ct-col">{{ change.colName }}</td>
+                  <td><span class="change-old">{{ change.oldVal || '(空)' }}</span></td>
+                  <td><span class="change-new">{{ change.newVal || '(空)' }}</span></td>
+                  <td><button class="btn-revert" @click="revertChange(key)" title="撤销此修改">✕</button></td>
+                </tr>
+              </tbody>
+            </table>
+            <div v-if="modifiedCells.size === 0" class="save-empty">所有修改已撤销</div>
+          </div>
+          <div class="save-modal-footer">
+            <button class="cd-btn-cancel" @click="saveModal = false">取消</button>
+            <button class="cd-btn-ok" :disabled="modifiedCells.size === 0" @click="confirmSave">确认保存</button>
+          </div>
         </div>
       </div>
     </Teleport>
@@ -574,6 +694,10 @@ onMounted(() => {
 .btn-reset { padding: 5px 12px; background: #fff; border: 1px solid #d9d9d9; border-radius: 4px; color: #595959; font-size: 13px; cursor: pointer; align-self: flex-start; }
 .btn-reset:hover { border-color: #1677ff; color: #1677ff; }
 .stat { font-size: 12px; color: #8c8c8c; align-self: center; }
+.cell-modified { background: #e6f0ff !important; }
+.btn-save { display: flex; align-items: center; gap: 5px; padding: 5px 12px; background: #1677ff; border: none; border-radius: 4px; color: #fff; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.btn-save:hover { background: #4096ff; }
+.save-badge { background: rgba(255,255,255,0.3); border-radius: 10px; font-size: 11px; padding: 0 6px; }
 .btn-export { padding: 5px 12px; background: #52c41a; border: none; border-radius: 4px; color: #fff; font-size: 13px; cursor: pointer; white-space: nowrap; }
 .btn-export:hover { background: #73d13d; }
 .stat b { color: #1677ff; }
@@ -677,4 +801,27 @@ onMounted(() => {
   user-select: none;
 }
 .ctx-item:hover { background: #e6f4ff; color: #1677ff; }
+
+.modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 2000; display: flex; align-items: center; justify-content: center; }
+.save-modal { background: #fff; border-radius: 8px; width: 640px; max-height: 70vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
+.save-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #f0f0f0; font-size: 15px; font-weight: 600; color: #262626; }
+.save-count { font-size: 13px; font-weight: 400; color: #1677ff; margin-left: 8px; }
+.modal-close { background: none; border: none; font-size: 16px; color: #8c8c8c; cursor: pointer; }
+.modal-close:hover { color: #ff4d4f; }
+.save-modal-body { flex: 1; overflow-y: auto; }
+.change-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.change-table thead tr { background: #fafafa; border-bottom: 1px solid #e8e8e8; }
+.change-table th { padding: 8px 14px; text-align: left; color: #8c8c8c; font-weight: 500; white-space: nowrap; }
+.change-table tbody tr { border-bottom: 1px solid #f5f5f5; }
+.change-table tbody tr:last-child { border-bottom: none; }
+.change-table td { padding: 8px 14px; color: #262626; }
+.ct-row { color: #8c8c8c; white-space: nowrap; }
+.ct-col { font-weight: 500; white-space: nowrap; }
+.change-old { color: #ff4d4f; background: #fff1f0; padding: 1px 6px; border-radius: 3px; display: inline-block; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+.change-new { color: #52c41a; background: #f6ffed; padding: 1px 6px; border-radius: 3px; display: inline-block; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+.btn-revert { background: none; border: none; color: #bfbfbf; cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 3px; line-height: 1; }
+.btn-revert:hover { background: #fff1f0; color: #ff4d4f; }
+.save-empty { padding: 24px; text-align: center; color: #bfbfbf; font-size: 13px; }
+.save-modal-footer { display: flex; gap: 8px; padding: 12px 18px; justify-content: flex-end; border-top: 1px solid #f0f0f0; }
+.cd-btn-ok:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>
