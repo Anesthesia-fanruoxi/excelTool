@@ -34,6 +34,36 @@ pub fn eval_formula(formula: &str, row: &[Option<String>]) -> String {
 fn eval_expr(expr: &str, row: &[Option<String>]) -> String {
     let expr = expr.trim();
 
+    // 括号包裹的子表达式，如 (P2-T2)
+    if expr.starts_with('(') && expr.ends_with(')') {
+        // 确认首尾括号是配对的
+        let inner = &expr[1..expr.len()-1];
+        let mut depth = 0i32;
+        let mut matched = true;
+        for (i, b) in inner.as_bytes().iter().enumerate() {
+            match b {
+                b'(' => depth += 1,
+                b')' => {
+                    depth -= 1;
+                    if depth < 0 {
+                        // 说明首 ( 和某个中间 ) 配对，不是整体括号
+                        matched = false;
+                        break;
+                    }
+                    // 如果在中间就归零，说明首尾括号不是一对
+                    if depth == 0 && i < inner.len() - 1 {
+                        matched = false;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if matched && depth == 0 {
+            return eval_expr(inner, row);
+        }
+    }
+
     // 函数调用
     if let Some(result) = try_eval_func(expr, row) {
         return result;
@@ -117,6 +147,11 @@ fn try_eval_func(expr: &str, row: &[Option<String>]) -> Option<String> {
         if !expr.ends_with(')') { return None; }
         func_name = upper[..paren].to_string();
         args_str = &expr[paren+1..expr.len()-1];
+    }
+
+    // func_name 为空说明表达式以 ( 开头，不是函数调用
+    if func_name.is_empty() {
+        return None;
     }
 
     let args = split_args(args_str);

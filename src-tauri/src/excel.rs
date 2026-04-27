@@ -116,7 +116,11 @@ pub fn read_sheet_data(path: &str, sheet_index: usize) -> Result<(Vec<Vec<String
 
             for c_idx in 0..all_rows[0].len() {
                 let abs_col = dstart_col + c_idx;
-                let frel_col = abs_col.saturating_sub(fstart_col);
+                // abs_col 在公式区域范围之前，直接跳过
+                if abs_col < fstart_col {
+                    continue;
+                }
+                let frel_col = abs_col - fstart_col;
                 if let Some(f) = frange.get((frel_row, frel_col)) {
                     if !f.trim().is_empty() {
                         info!("[formula] col={} frel_col={} formula={:?}", c_idx, frel_col, f);
