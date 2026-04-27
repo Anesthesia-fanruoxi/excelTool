@@ -182,6 +182,7 @@ function onReset() {
 // 编辑
 const editing = ref<{ rowIdx: number; colIdx: number } | null>(null);
 const editVal = ref('');
+const cellInputRef = ref<HTMLInputElement | null>(null);
 
 // 修改记录: key = `${rowId}_${colIdx}`
 interface CellChange {
@@ -200,6 +201,11 @@ const saveModal = ref(false);
 function isModified(rowIdx: number, colIdx: number) {
   const rowId = rowIds.value[rowIdx];
   return modifiedCells.value.has(`${rowId}_${colIdx}`);
+}
+
+function isRowModified(rowIdx: number) {
+  const rowId = rowIds.value[rowIdx];
+  return [...modifiedCells.value.keys()].some(k => k.startsWith(`${rowId}_`));
 }
 
 // 列宽
@@ -261,7 +267,7 @@ function autoFitCol(idx: number) {
 
 onUnmounted(() => {
   stopResize();
-  document.removeEventListener('click', closeDropdown);
+  document.removeEventListener('mousedown', onDocMouseDown);
 });
 
 // 公式列
@@ -305,11 +311,14 @@ async function loadPage() {
 }
 
 function startEdit(rowIdx: number, colIdx: number) {
-  console.log('[edit] dblclick', rowIdx, colIdx, 'isFormula:', isFormulaCol(colIdx));
   if (isFormulaCol(colIdx)) return;
   closeDropdown();
   editing.value = { rowIdx, colIdx };
   editVal.value = rows.value[rowIdx][colIdx] ?? '';
+  setTimeout(() => {
+    cellInputRef.value?.focus();
+    cellInputRef.value?.select();
+  }, 30);
 }
 
 async function commitEdit() {
@@ -319,7 +328,7 @@ async function commitEdit() {
   const col   = columns.value[colIdx];
   const val   = editVal.value;
   const oldVal = rows.value[rowIdx][colIdx] ?? '';
-  editing.value = null;
+  editing.value = null;  // 先关闭编辑态，避免 blur 重复触发
   try {
     const recalcResults = await invoke<[number, string][]>('update_cell', {
       tableName: props.tab.tableName,
@@ -445,13 +454,32 @@ watch(() => props.tab.tableName, () => {
   loadPage();
 });
 
+function onDocMouseDown(e: MouseEvent) {
+  if (editing.value && !(e.target as HTMLElement).classList.contains('cell-inp')) {
+    commitEdit();
+  }
+  if (saveModal.value) return;
+  closeDropdown();
+  closeContextMenu();
+  showColPanel.value = false;
+}
+
+function onDocKeyDown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && saveModal.value) {
+    saveModal.value = false;
+  }
+}
+
 onMounted(() => {
   loadPage();
-  document.addEventListener('click', () => {
-    closeDropdown();
-    closeContextMenu();
-    showColPanel.value = false;
-  });
+  document.addEventListener('mousedown', onDocMouseDown);
+  document.addEventListener('keydown', onDocKeyDown);
+});
+
+onUnmounted(() => {
+  stopResize();
+  document.removeEventListener('mousedown', onDocMouseDown);
+  document.removeEventListener('keydown', onDocKeyDown);
 });
 </script>
 
@@ -549,7 +577,10 @@ onMounted(() => {
 
           <!-- 数据行 -->
           <div v-for="(row, rIdx) in rows" :key="rowIds[rIdx]" class="tbody-row">
-            <div class="td col-seq">{{ (curPage - 1) * PAGE_SIZE + rIdx + 1 }}</div>
+            <div class="td col-seq" :class="{ 'seq-modified': isRowModified(rIdx) }">
+              {{ (curPage - 1) * PAGE_SIZE + rIdx + 1 }}
+              <span v-if="isRowModified(rIdx)" class="seq-dot" />
+            </div>
             <div
               v-for="cIdx in visibleColIndices"
               :key="cIdx"
@@ -563,7 +594,15 @@ onMounted(() => {
               @contextmenu="openContextMenu($event, row[cIdx] ?? '')"
             >
               <template v-if="editing && editing.rowIdx === rIdx && editing.colIdx === cIdx">
-                <input v-model="editVal" class="cell-inp" autofocus @blur="commitEdit" @keydown.enter="commitEdit" @keydown.esc="cancelEdit" />
+                <input
+                  ref="cellInputRef"
+                  v-model="editVal"
+                  class="cell-inp"
+                  @keydown.enter.prevent="commitEdit"
+                  @keydown.esc="cancelEdit"
+                  @click.stop
+                  @dblclick.stop
+                />
               </template>
               <template v-else>{{ row[cIdx] ?? '' }}</template>
             </div>
@@ -584,7 +623,7 @@ onMounted(() => {
 
     <!-- 保存确认弹窗 -->
     <Teleport to="body">
-      <div v-if="saveModal" class="modal-mask" @click.self="saveModal = false">
+      <div v-if="saveModal" class="modal-mask">
         <div class="save-modal">
           <div class="save-modal-header">
             <span>确认保存修改 <span class="save-count">{{ modifiedCells.size }} 处</span></span>
@@ -715,17 +754,19 @@ onMounted(() => {
 .th:last-child, .td:last-child { border-right: none; }
 .th { position: relative; display: flex; align-items: center; gap: 4px; background: #fafafa; color: #595959; font-weight: 600; user-select: none; height: 30px; padding-right: 22px; }
 .th-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.th-formula { color: #389e0d; }
+.th-formula { color: #8c8c8c; }
 .th-filtered { background: #e6f4ff !important; }
 
 .filter-arrow { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 3px; color: #bfbfbf; cursor: pointer; transition: background 0.15s, color 0.15s; }
 .filter-arrow:hover { background: #e6f4ff; color: #1677ff; }
 .filter-arrow-active { color: #1677ff; background: #e6f4ff; }
 
-.col-seq { width: 46px !important; min-width: 46px !important; text-align: center; color: #bfbfbf; background: #fafafa; font-size: 12px; justify-content: center; padding-right: 10px; }
+.col-seq { width: 46px !important; min-width: 46px !important; text-align: center; color: #bfbfbf; background: #fafafa; font-size: 12px; justify-content: center; padding-right: 10px; position: relative; }
+.seq-modified { color: #1677ff; font-weight: 600; }
+.seq-dot { position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; background: #1677ff; border-radius: 50%; }
 .cell { cursor: default; background: #fff; }
-.cell-formula { background: #f6ffed !important; cursor: not-allowed; }
-.formula-badge { flex-shrink: 0; display: inline-block; padding: 0 3px; background: #389e0d; color: #fff; border-radius: 3px; font-size: 10px; font-family: monospace; }
+.cell-formula { background: #f5f5f5 !important; cursor: not-allowed; color: #8c8c8c; }
+.formula-badge { flex-shrink: 0; display: inline-block; padding: 0 3px; background: #8c8c8c; color: #fff; border-radius: 3px; font-size: 10px; font-family: monospace; }
 .cell-inp { width: 100%; padding: 2px 4px; border: 2px solid #1677ff; border-radius: 2px; font-size: 13px; outline: none; background: #fff; }
 
 .resize-handle { position: absolute; right: 0; top: 0; width: 6px; height: 100%; cursor: col-resize; z-index: 1; }
